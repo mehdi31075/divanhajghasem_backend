@@ -10,7 +10,7 @@
   },
   "type": "module",
   "dependencies": {
-    "dompurify": "3.4.16",
-    "quill": "2.0.3"
+    "ckeditor5": "48.5.2",
+    "dompurify": "3.4.16"
   }
 }

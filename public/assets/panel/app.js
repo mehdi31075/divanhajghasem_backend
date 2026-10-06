@@ -120,35 +120,57 @@ async function render(route) {
     if (!state.categories.length) { html = `<section class="card"><h1>ابتدا دسته بسازید</h1>${button('دسته‌بندی‌ها', 'categories')}</section>`; }
     else {
       html = `<div class="actions"><h1>${original ? 'ویرایش مطلب' : 'مطلب جدید'}</h1>${button('بازگشت', 'posts')}</div><form id="post-form" class="card form-card"><label>عنوان<input name="news_heading" maxlength="500" required value="${e(original?.news_heading)}"></label><label>عنوان فرعی<input name="news_date" maxlength="255" required value="${e(original?.news_date)}"></label><label>دسته<select name="cid">${categoryOptions(original?.cat_id)}</select></label><label>متن مطلب<textarea id="body" name="news_description">${e(original?.news_description)}</textarea></label><details><summary>پیش‌نمایش متن</summary><button id="refresh-preview" type="button">نمایش متن فعلی</button><iframe class="preview" sandbox="" referrerpolicy="no-referrer" title="پیش‌نمایش متن"></iframe></details><p class="form-message" role="alert"></p><button type="submit" class="primary">ذخیره روی سرور</button></form>`;
-      after = () => {
+      after = async () => {
         const form = $('#post-form');
         const body = original?.news_description || '';
-        if (window.Quill && window.DOMPurify) {
+        if (window.CKEDITOR && window.DOMPurify) {
           const textarea = $('#body');
           const host = document.createElement('div'); host.className = 'editor-box';
           const mount = document.createElement('div'); host.append(mount); textarea.after(host);
-          textarea.hidden = true;
-          const quill = new window.Quill(mount, {theme: 'snow', modules: {toolbar: [
-            [{header: [1,2,3,false]}], ['bold','italic','underline'], [{color: []}],
-            [{list: 'ordered'}, {list: 'bullet'}], [{align: []}, {direction: 'rtl'}], ['link','blockquote','clean'],
-          ]}, placeholder: 'متن نوشته را اینجا بنویسید…'});
-          quill.clipboard.dangerouslyPasteHTML(window.DOMPurify.sanitize(body), 'silent');
-          quill.root.setAttribute('aria-label', 'متن مطلب');
-          quill.root.setAttribute('role', 'textbox'); quill.root.setAttribute('aria-multiline', 'true');
-          for (const [cls, label] of Object.entries({'bold':'پررنگ', 'italic':'مورب', 'underline':'زیرخط', 'list':'فهرست', 'direction':'جهت راست‌به‌چپ', 'link':'پیوند', 'blockquote':'نقل قول', 'clean':'پاک کردن قالب'})) {
-            for (const control of host.querySelectorAll(`.ql-${cls}`)) { control.setAttribute('aria-label', label); control.title = label; }
-          }
-          for (const [cls, label] of Object.entries({'header':'قالب متن', 'align':'چینش متن', 'color':'رنگ متن'})) {
-            const picker = host.querySelector(`.ql-${cls} .ql-picker-label`);
-            if (picker) { picker.setAttribute('aria-label', label); picker.title = label; }
-          }
-          for (const item of host.querySelectorAll('.ql-header .ql-picker-label, .ql-header .ql-picker-item')) {
-            item.dataset.label = item.dataset.value ? `عنوان ${digits(item.dataset.value)}` : 'متن معمولی';
-          }
-          let changed = false;
-          quill.on('text-change', (_delta, _old, source) => { if (source === 'user') { changed = true; markDirty(); } });
-          state.editor = {checkDirty: () => changed, getData: () => window.DOMPurify.sanitize(quill.getSemanticHTML()),
-            setReadOnly: blocked => quill.enable(!blocked), destroy: () => host.remove()};
+          const C = window.CKEDITOR;
+          // Match the former panel's CKEditor tools, with a current local build.
+          const plugins = ['Essentials','Paragraph','Heading','Bold','Italic','Underline','Strikethrough',
+            'BlockQuote','Link','List','Indent','IndentBlock','Alignment','RemoveFormat','PasteFromOffice',
+            'Table','TableToolbar','TableProperties','TableCellProperties','Image','ImageCaption',
+            'ImageStyle','ImageResize','ImageToolbar','ImageInsertViaUrl','HorizontalLine',
+            'SpecialCharacters','SpecialCharactersEssentials','SourceEditing','GeneralHtmlSupport',
+            'FontFamily','FontSize','FontColor','FontBackgroundColor','Fullscreen'];
+          const submit = form.querySelector('button[type=submit]'); submit.disabled = true;
+          try {
+            const editor = await C.ClassicEditor.create(mount, {
+              licenseKey: 'GPL', plugins: plugins.map(name => C[name]),
+              language: {ui: 'fa', content: 'fa'},
+              initialData: window.DOMPurify.sanitize(body),
+              placeholder: 'متن نوشته را اینجا بنویسید…',
+              toolbar: {items: ['undo','redo','|','link','insertImageViaUrl','insertTable','horizontalLine',
+                'specialCharacters','|','sourceEditing','fullscreen','-','heading','fontFamily','fontSize',
+                '|','bold','italic','underline','strikethrough','removeFormat','|','bulletedList','numberedList',
+                'outdent','indent','blockQuote','alignment','|','fontColor','fontBackgroundColor'], shouldNotGroupWhenFull: true},
+              heading: {options: [{model: 'paragraph',title: 'متن معمولی',class: 'ck-heading_paragraph'},
+                ...[1,2,3].map(n => ({model: `heading${n}`,view: `h${n}`,title: `عنوان ${digits(n)}`,class: `ck-heading_heading${n}`}))]},
+              fontFamily: {options: ['default','Vazirmatn','Tahoma, sans-serif','Arial, Helvetica, sans-serif','Times New Roman, Times, serif'],supportAllValues: true},
+              fontSize: {options: [12,14,16,18,20,24,28,36],supportAllValues: true},
+              table: {contentToolbar: ['tableColumn','tableRow','mergeTableCells','tableProperties','tableCellProperties']},
+              image: {toolbar: ['imageTextAlternative','toggleImageCaption','imageStyle:inline','imageStyle:block','imageStyle:side','resizeImage']},
+              htmlSupport: {allow: [{name: /^(p|div|span|br|h[1-6]|pre|blockquote|ul|ol|li|a|img|figure|figcaption|table|thead|tbody|tfoot|tr|th|td|strong|b|em|i|u|s|sub|sup|hr)$/,styles: true,classes: true,attributes: true}]},
+            });
+            if (!form.isConnected) { await editor.destroy(); return; }
+            textarea.hidden = true;
+            editor.editing.view.change(writer => writer.setAttribute('aria-label', 'متن مطلب', editor.editing.view.document.getRoot()));
+            let changed = false;
+            editor.model.document.on('change:data', () => { changed = true; markDirty(); });
+            // Source mode holds edits outside the model until getData() synchronizes it.
+            host.addEventListener('input', markDirty);
+            state.editor = {
+              checkDirty: () => { editor.getData(); return changed; },
+              getData: () => window.DOMPurify.sanitize(editor.getData()),
+              setReadOnly: blocked => blocked ? editor.enableReadOnlyMode('saving') : editor.disableReadOnlyMode('saving'),
+              destroy: () => { editor.destroy().catch(() => {}); host.remove(); },
+            };
+          } catch {
+            host.remove();
+            formMessage(form, 'ویرایشگر بارگیری نشد؛ متن در کادر HTML محفوظ است.');
+          } finally { submit.disabled = false; }
         }
         $('#refresh-preview').onclick = () => preview($('.preview'), editorHtml(body));
         const fields = () => ({...Object.fromEntries(new FormData(form)), news_description: editorHtml(body), ...(original ? {id: String(id)} : {})});
@@ -193,7 +215,7 @@ async function render(route) {
   disposeEditor(); state.route = route; history.replaceState(null, '', `#${route}`); $('#content').innerHTML = html;
   for (const a of document.querySelectorAll('nav a')) a.setAttribute('aria-current', a.hash === `#${view}` ? 'page' : 'false');
   $('#content').setAttribute('aria-busy', 'false');
-  if (after) after();
+  if (after) await after();
   window.scrollTo?.({top: 0, behavior: 'instant'});
 }
 async function navigate(route) {

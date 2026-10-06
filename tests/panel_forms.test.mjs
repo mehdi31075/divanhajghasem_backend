@@ -39,7 +39,15 @@ async function fixture({rich=false}={}){
  const context=dom.getInternalVMContext();
  if(rich){
   vm.runInContext(await fs.readFile('public/assets/purify/purify.min.js','utf8'),context);
-  vm.runInContext(await fs.readFile('public/assets/quill/quill.js','utf8'),context);
+  dom.window.ResizeObserver=class {observe(){} unobserve(){} disconnect(){}};
+  dom.window.HTMLCanvasElement.prototype.getContext=()=>null;
+  dom.window.Range.prototype.getClientRects=()=>[];
+  dom.window.Range.prototype.getBoundingClientRect=()=>({left:0,right:0,top:0,bottom:0,width:0,height:0});
+  dom.window.HTMLElement.prototype.scrollIntoView=()=>{};
+  vm.runInContext(await fs.readFile('public/assets/ckeditor/ckeditor5.umd.js','utf8'),context);
+  vm.runInContext(await fs.readFile('public/assets/ckeditor/fa.umd.js','utf8'),context);
+  const create=dom.window.CKEDITOR.ClassicEditor.create.bind(dom.window.CKEDITOR.ClassicEditor);
+  dom.window.CKEDITOR.ClassicEditor.create=async(...args)=>{const editor=await create(...args); state.richEditor=editor; return editor;};
  }
  const client=new vm.SourceTextModule(sources[1],{context,identifier:'client.js'});
  const app=new vm.SourceTextModule(sources[0],{context,identifier:'app.js'});
@@ -84,21 +92,41 @@ test('lost create response changes the button to read-only reconciliation',async
  }finally{f.dom.window.close();}
 });
 
-test('real Quill preserves untouched legacy HTML and sanitizes edited exports',async()=>{
+test('real CKEditor preserves untouched legacy HTML and sanitizes edited exports',async()=>{
  const f=await fixture({rich:true});try{
-  const original='<p dir="rtl"><strong>متن قدیمی</strong></p>';
+  const original='<p dir="rtl" style="text-align:center"><strong>متن قدیمی</strong></p><table><tbody><tr><td>جدول قدیمی</td></tr></tbody></table>';
   f.state.posts.push({nid:'9',cat_id:'61',news_heading:'عنوان قبلی',news_date:'زیرعنوان',news_description:original});
   await f.login();await waitFor(()=>f.doc.querySelector('[data-route="posts"]'));
   f.click('[data-route="posts"]');await waitFor(()=>f.doc.querySelector('[data-route="post/9"]'));
-  f.click('[data-route="post/9"]');await waitFor(()=>f.doc.querySelector('.ql-container'));
+  f.click('[data-route="post/9"]');await waitFor(()=>f.doc.querySelector('.ck-editor__editable') && !f.doc.querySelector('#post-form button[type=submit]').disabled);
   f.input('[name=news_heading]','عنوان تازه');f.submit('#post-form');await waitFor(()=>!f.doc.querySelector('#post-form'));
   assert.equal(f.state.posts[0].news_description,original);
-  f.click('[data-route="post/9"]');await waitFor(()=>f.doc.querySelector('.ql-container'));
-  const editor=f.dom.window.Quill.find(f.doc.querySelector('.ql-container'));
-  editor.insertText(0,'تغییر ', 'user');
-  editor.getSemanticHTML=()=>'<p>متن ویرایش‌شده</p><img src="x" onerror="window.pwned=1"><script>window.pwned=1</script>';
+  f.click('[data-route="post/9"]');await waitFor(()=>f.doc.querySelector('.ck-editor__editable') && !f.doc.querySelector('#post-form button[type=submit]').disabled);
+  const editor=f.state.richEditor;
+  assert.ok(editor.plugins.has('SourceEditing'));
+  assert.ok(editor.plugins.has('Table'));
+  assert.ok(editor.plugins.has('ImageInsertViaUrl'));
+  editor.setData('<p>تغییر</p>');
+  editor.getData=()=>'<p>متن ویرایش‌شده</p><img src="x" onerror="window.pwned=1"><script>window.pwned=1</script>';
   f.submit('#post-form');await waitFor(()=>!f.doc.querySelector('#post-form'));
   assert.equal(f.state.posts[0].news_description,'<p>متن ویرایش‌شده</p><img src="x">');
   assert.equal(f.dom.window.pwned,undefined);
+ }finally{f.dom.window.close();}
+});
+
+test('CKEditor source mode saves table formatting and keeps unsaved source through expired login',async()=>{
+ const f=await fixture({rich:true});try{
+  await f.login();await waitFor(()=>f.doc.querySelector('[data-route="post-new"]'));
+  f.click('[data-route="post-new"]');await waitFor(()=>f.doc.querySelector('.ck-editor__editable') && !f.doc.querySelector('#post-form button[type=submit]').disabled);
+  f.input('[name=news_heading]','جدول');f.input('[name=news_date]','زیرعنوان');
+  const editor=f.state.richEditor;const source=editor.plugins.get('SourceEditing');
+  source.isSourceEditingMode=true;
+  f.input('.ck-source-editing-area textarea','<p style="color:red">متن فارسی</p><table><tbody><tr><td>خانه جدول</td></tr></tbody></table>');
+  f.state.expired=true;f.submit('#post-form');await waitFor(()=>!f.doc.querySelector('#login').hidden);
+  assert.equal(f.state.mutations,0);await f.login();
+  assert.ok(f.doc.querySelector('.ck-source-editing-area textarea').value.includes('خانه جدول'));
+  f.submit('#post-form');await waitFor(()=>f.state.posts.length===1 && !f.doc.querySelector('#post-form'));
+  const body=f.state.posts[0].news_description;
+  assert.match(body,/<table/);assert.match(body,/خانه جدول/);assert.match(body,/color:red/);
  }finally{f.dom.window.close();}
 });

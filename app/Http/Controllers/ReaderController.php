@@ -14,10 +14,10 @@ class ReaderController extends Controller
         $query = [];
         foreach (['cat_id', 'nid', 'latest_news'] as $key) {
             $value = $request->query($key);
-            if (empty($value)) {
+            if ($value === null) {
                 continue;
             }
-            if (! is_scalar($value) || ! preg_match('/^[1-9][0-9]{0,9}$/', (string) $value)) {
+            if (! is_scalar($value) || ! preg_match('/^(?:0|[1-9][0-9]{0,9})$/', (string) $value)) {
                 throw new ApiError(422, 'invalid_id', 'شناسه معتبر نیست.');
             }
             $query[$key] = (string) $value;

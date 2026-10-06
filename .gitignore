@@ -28,3 +28,5 @@
 /.playwright-cli/
 /playwright-cli.json
 *.sql
+
+/output/editor-preview.html
