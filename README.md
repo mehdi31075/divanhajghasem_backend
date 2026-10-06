@@ -1,12 +1,112 @@
-# Divan Haj Ghasem PHP backend
+# بک‌اند دیوان حاج قاسم
 
-Baseline extracted from the supplied assets.zip, before token API changes.
-Existing panel entry: index.php. Public Android API: api.php.
+نسخهٔ پایه از `assets.zip` کاربر استخراج شده و پیش از تغییر API با commit
+`7678bac` ثبت شده است. تمام فایل‌های PHP قدیمی، دارایی‌های پنل و تصاویر
+دسته‌ها حفظ شده‌اند. رمز دیتابیس در `includes/variables.php` فقط محلی است و
+در Git قرار نمی‌گیرد؛ ZIP همراه CMS نیز از Git حذف شده است.
 
-The original includes/variables.php remains locally available and is ignored
-by Git because it contains hosting database credentials. Copy
-includes/variables.example.php to includes/variables.php when configuring a
-fresh environment. On the existing host, keep the original variables.php.
+## سازگاری با نسخهٔ فعلی
 
-The bundled CMS ZIP is also excluded. Application PHP, assets and category
-images are versioned. No production database dump was provided.
+فایل‌های `api.php`، `index.php` و فرم‌های پنل **هیچ تغییری ندارند**.
+API جدید فایل مستقل `mobile-api.php` است و هیچ cookie/session ایجاد یا مصرف
+نمی‌کند. همان `tbl_user` و همان هش `sha256(lowercase_username + password)`
+پنل برای ورود استفاده می‌شوند. migration فقط دو جدول جدید می‌سازد و جدول‌های
+قدیمی را تغییر نمی‌دهد. افزودن ستون به جدول‌های قدیمی عمداً انجام نشده چون
+بعضی فرم‌های پنل از `SELECT *` و تعداد ثابت ستون‌ها استفاده می‌کنند.
+
+## نصب روی هاست موجود
+
+1. از دیتابیس هاست پشتیبان بگیرید. `migrations/001_token_auth.sql` را در همان
+   دیتابیس با phpMyAdmin یا ابزار MySQL اجرا کنید. اجرای دوباره امن است.
+2. فقط `mobile-api.php` و `includes/mobile_api.php` را کنار فایل‌های موجود
+   آپلود کنید. `includes/variables.php` موجود هاست را نگه دارید؛ فایل محلی
+   یا example را روی آن کپی نکنید. پوشه tests لازم نیست آپلود شود.
+3. `includes/token_config.example.php` را به `includes/token_config.php`
+   روی هاست کپی کنید. انقضای پیش‌فرض ۲۴ ساعت است و HTTPS برای مدیریت الزامی است.
+   اگر TLS در proxy هاست تمام می‌شود، متغیر `HTTPS` را در پیکربندی مطمئن هاست
+   تنظیم کنید؛ API به هدر ارسالی کاربر `X-Forwarded-Proto` اعتماد نمی‌کند.
+4. در Apache/FastCGI مطمئن شوید `Authorization` به PHP می‌رسد. در صورت نیاز
+   با پشتیبانی هاست، این دستور را فقط برای فایل جدید اضافه کنید:
+
+   ```apache
+   <Files "mobile-api.php">
+       SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
+   </Files>
+   ```
+5. با حساب پنل، login و me را بررسی کنید؛ سپس یک مطلب آزمایشی ایجاد، ویرایش
+   و حذف کنید و همان مطلب را در پنل و `api.php` نیز بررسی کنید. این تست‌ها در
+   این workspace روی سایت زنده انجام نشده‌اند و کد خودکار deploy نشده است.
+
+API جدید به PHP ۵٫۶ یا جدیدتر و mysqli نیاز دارد؛ PHP ۵٫۶ برای توکن تصادفی به OpenSSL نیز نیاز دارد. **نسخه PHP سایت را صرفاً برای
+این API ارتقا ندهید**: `api.php` قدیمی از `mysql_*` استفاده می‌کند که در PHP ۷
+حذف شده است. تست محلی کد جدید با PHP ۸٫۲ انجام شده؛ سازگاری عملی هاست و MySQL
+باید قبل از انتشار تأیید شود.
+
+برای میزبان آزمایشی که فقط HTTP دارد می‌توانید صریحاً `require_https` را
+`false` کنید؛ در HTTP رمز و توکن روی شبکه رمزنگاری نمی‌شوند. این گزینه برای
+انتشار عمومی مناسب نیست. HTTPS را روی هاست تنظیم و آدرس Flutter را HTTPS کنید.
+
+## قرارداد API
+
+خواندن عمومی بدون توکن و با قرارداد نسخهٔ Android:
+
+| درخواست | نتیجه |
+| --- | --- |
+| `GET mobile-api.php` | دسته‌ها و مسیر تصاویر |
+| `GET mobile-api.php?cat_id=61` | مطالب دسته |
+| `GET mobile-api.php?nid=117` | جزئیات مطلب |
+| `GET mobile-api.php?latest_news=20` | همان ترتیب صعودی شناسهٔ API قدیمی |
+
+پاسخ خواندن `{"AndroidEbookApp":[...]}` است و در نبود رکورد `[]` برمی‌گردد.
+شناسه‌ها و سایر مقدارهای غیر null به‌شکل رشته برمی‌گردند، مثل API قدیمی.
+`news_date` **زیرعنوان** است، نه تاریخ ایجاد یا ویرایش.
+
+برای نوشتن از form-urlencoded یا JSON استفاده کنید. توکن فقط در هدر
+`Authorization: Bearer <access_token>` ارسال می‌شود؛ query string یا cookie
+پذیرفته نمی‌شود. رمز و توکن واقعی را در مثال‌ها یا Git ثبت نکنید.
+
+| درخواست | فیلدها |
+| --- | --- |
+| `POST ?action=login` | `username`, `password`؛ پاسخ `access_token`, `token_type: Bearer`, `expires_in`, `username`, `ok: true` |
+| `GET ?action=me` | هدر Bearer؛ تأیید حساب |
+| `POST ?action=logout` | هدر Bearer؛ لغو همین توکن |
+| `POST ?action=create` | هدر Bearer و `news_heading`, `news_date`, `cid`, `news_description` |
+| `POST ?action=update` | همان فیلدها و `id` |
+| `POST ?action=delete` | هدر Bearer و `id`؛ حذف دائمی رکورد |
+
+عملیات نوشتن موفق `{"ok":true,"nid":"..."}` برمی‌گردانند. ویرایش بدون تغییر
+نیز موفق است؛ حذف شناسهٔ قبلاً حذف‌شده موفق می‌ماند. فایل تصاویر در حذف با API
+جدید پاک نمی‌شود تا فایل مشترک یا نام نامعتبر از filesystem حذف نشود.
+
+خطا: `{"ok":false,"error":"...","message":"..."}` با status معتبر:
+۴۰۱ ورود نامعتبر/منقضی، ۴۲۲ ورودی نامعتبر، ۴۰۴ عملیات/مطلب ناموجود، ۴۰۵ روش
+اشتباه، ۴۲۶ نیاز به HTTPS، ۴۲۹ محدودیت تلاش ورود، ۵۰۰ خطای داخلی/migration.
+خطای ۴xx قبل از تغییر رکورد صادر می‌شود. قطع ارتباط یا ۵xx بعد از درخواست
+نوشتن، دلیل ارسال دوباره نیست؛ ابتدا از API نتیجه را بخوانید.
+
+توکن ۳۲ بایت تصادفی رمزنگاری‌شده است، فقط هش SHA-256 آن روی سرور ثبت می‌شود.
+خروج همین توکن را لغو می‌کند؛ انقضا، حذف حساب یا تغییر رمز پنل توکن را نامعتبر
+می‌کند. ورود ناموفق پس از ۱۰ تلاش از یک IP در ۱۵ دقیقه محدود می‌شود.
+در هاست پشت proxy اشتراکی، REMOTE_ADDR ممکن است IP خود proxy باشد؛ برای
+اعتماد به IP واقعی فقط تنظیمات مطمئن هاست را به‌کار ببرید.
+
+API جدید CORS و OPTIONS برای خواندن و هدر Bearer دارد و cookie مصرف نمی‌کند.
+Flutter باید برای آن client بدون `withCredentials` استفاده کند. CORS فایل
+قدیمی عمداً تغییر نکرده است.
+
+محدودیت‌های schema قدیمی: عنوان ۵۰۰ نویسه، زیرعنوان ۲۵۵ نویسه و بدنه TEXT
+حداکثر ۶۵۵۳۵ بایت UTF-8. ایموجی و دیگر نویسه‌های چهار بایتی به‌دلیل charset
+قدیمی با خطای روشن رد می‌شوند. HTML بدون بازنویسی ذخیره می‌شود؛ API sanitizer
+جدید HTML ندارد. کنترل اتمیک تعارض، idempotency و تاریخ‌های نوشته‌ها اضافه نشده‌اند.
+
+## بررسی محلی
+
+```sh
+php -l mobile-api.php
+php -l includes/mobile_api.php
+php tests/mobile_api_test.php
+```
+
+آزمون‌ها SQL تولیدی و منطق احراز هویت را روی fixture جداگانه SQLite اجرا
+می‌کنند؛ اتصال mysqli واقعی و MySQL هاست را جایگزین نمی‌کنند. هیچ سرور محلی
+راه‌اندازی نمی‌شود و دادهٔ تولیدی سایت تغییر نمی‌کند.
