@@ -30,7 +30,21 @@ php artisan optimize
 
 ## انتقال وب
 
-Document root باید دقیقاً **`PROJECT/public`** باشد. تنظیم به ریشهٔ پروژه، `.env` و کد خصوصی را در معرض دسترسی می‌گذارد و صحیح نیست. اگر cPanel اجازهٔ تغییر root نمی‌دهد، محتویات `public/` را در public_html قرار دهید و دو مسیر require در public/index.php را به پروژهٔ خصوصی اصلاح کنید؛ پوشهٔ public واقعی Laravel و مسیر public_path تصاویر باید به همین مسیر نگاشت شود. روش پیشنهادی تغییر document root است.
+روش استاندارد تنظیم Document root به **`PROJECT/public`** است. تنظیم به ریشهٔ پروژه، `.env` و کد خصوصی را در معرض دسترسی می‌گذارد و صحیح نیست.
+
+برای DirectAdmin با ریشهٔ ثابت `public_html`، پروژهٔ خصوصی را در پوشهٔ هم‌سطح **`divan`** قرار دهید و محتویات `public/` (همراه `.htaccess`) را به `public_html` منتقل کنید. `index.php` جدید این دو چیدمان را تشخیص می‌دهد و `public_path` را تنظیم می‌کند. وقتی پوشهٔ `divan/public` منتقل شده باشد، bootstrap برای دستورات Artisan هم از `public_html` هم‌سطح استفاده می‌کند؛ بنابراین مسیر ذخیرهٔ تصاویر در وب و CLI یکسان است.
+
+<div dir="ltr" align="left">
+
+```text
+/home/divanhaj/domains/divanhajghasem.ir/
+├── divan/         # app, bootstrap, config, vendor, storage, .env, artisan, ...
+└── public_html/   # index.php, .htaccess, assets, upload, ...
+```
+
+</div>
+
+در ۲۰۲۶/۱۰/۰۷ این چیدمان روی هاست بررسی و اصلاح شد: مسیر اشتباه autoload/bootstrap خطای ۵۰۰ می‌داد؛ پس از اصلاح، صفحهٔ پنل باز شد. دو جدول مفقود احراز هویت (`divan_api_tokens` و `divan_api_login_attempts`) مطابق migration و با `CREATE TABLE IF NOT EXISTS` از phpMyAdmin اضافه شدند. جدول‌های اصلی و مطالب تغییر نکردند. اجرای کامل Artisan migration و ثبت جدول migrations هنوز انجام نشده؛ اجرای بعدی `migrate --force` جدول‌های موجود را دوباره نمی‌سازد.
 
 Apache: فایل `public/.htaccess` همراه پروژه و mod_rewrite فعال باشد. فایل فیزیکی قدیمی `api.php` و `mobile-api.php` در document root باقی نماند؛ وگرنه مسیرهای Laravel را دور می‌زنند. `/api.php` یک URL لاراول است و باید به public/index.php rewrite شود. هدر Authorization نیز در .htaccess حفظ شده است.
 
@@ -59,6 +73,8 @@ location ~ /\. { deny all; }
 خواندن `/api.php` با HTTP مجاز بماند تا کلاینت قدیمی نیازمند تغییر نشود. برای پنل از HTTPS معتبر استفاده کنید؛ اعتبار گواهی فعلی سایت منقضی گزارش شده و باید تمدید شود. پشت reverse proxy، HTTPS را در تنظیمات سرور به PHP منتقل کنید؛ هدرهای proxy ناشناس را بدون محدودیت trust نکنید.
 
 ## بررسی پیش از جایگزینی نهایی
+
+وضعیت بررسی ۲۰۲۶/۱۰/۰۷: پنل و ورود در Chrome موفق‌اند، اما بررسی مستقل HTTPS هنوز certificate has expired می‌دهد و API عمومی HTTP از این سیستم ۴۰۳ برگرداند. اعتبار گواهی و مسیر عمومی وب‌سرور باید پیش از تأیید انتشار اپ بررسی شوند.
 
 - پاسخ‌های `/api.php`، `?cat_id=<id>`، `?nid=<id>` و `?latest_news=20` را قبل و بعد مقایسه کنید: کلید AndroidEbookApp، شناسه‌های رشته‌ای، ترتیب و [] در نبود رکورد یکسان باشد.
 - چند URL تصویر قدیمی را بررسی کنید.

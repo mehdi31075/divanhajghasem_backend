@@ -8,7 +8,7 @@ use Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull;
 use Illuminate\Foundation\Http\Middleware\TrimStrings;
 use Illuminate\Http\Request;
 
-return Application::configure(basePath: dirname(__DIR__))
+$app = Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         using: fn () => require __DIR__.'/../routes/divan.php',
         commands: __DIR__.'/../routes/console.php',
@@ -26,3 +26,11 @@ return Application::configure(basePath: dirname(__DIR__))
             'ok' => false, 'error' => $error->errorCode, 'message' => $error->getMessage(),
         ], $error->status));
     })->create();
+
+// Use the same public path for Artisan and HTTP after public/ is moved to public_html.
+$sharedPublicPath = dirname(__DIR__, 2).'/public_html';
+if (! is_dir($app->publicPath()) && is_dir($sharedPublicPath)) {
+    $app->usePublicPath($sharedPublicPath);
+}
+
+return $app;
