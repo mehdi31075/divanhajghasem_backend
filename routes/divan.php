@@ -8,6 +8,10 @@ use Illuminate\Support\Facades\Route;
 // No web/session middleware: Bearer is the only authorization mechanism.
 Route::middleware(ApiTransport::class)->group(function () {
     Route::match(['GET', 'OPTIONS'], '/api.php', ReaderController::class);
+    // The shipped Android APK concatenates its base URL into //api.php.
+    // Serve the same public reader directly; a redirect would break old clients.
+    Route::match(['GET', 'OPTIONS'], '/{legacySlashes}api.php', ReaderController::class)
+        ->where('legacySlashes', '/+');
     Route::match(['GET', 'POST', 'OPTIONS'], '/mobile-api.php', ApiController::class);
 });
 
