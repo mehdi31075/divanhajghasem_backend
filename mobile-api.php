@@ -3,6 +3,7 @@
 ob_start(); // Legacy hosting config may contain trailing whitespace.
 ini_set('display_errors', '0');
 require_once __DIR__.'/includes/mobile_api.php';
+require_once __DIR__.'/includes/category_images.php';
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
@@ -41,7 +42,7 @@ try {
     $method = $_SERVER['REQUEST_METHOD'];
     $input = $method === 'GET' ? $_GET : $_POST;
     if ($method === 'POST') {
-        if (isset($_SERVER['CONTENT_LENGTH']) && (int)$_SERVER['CONTENT_LENGTH'] > 1100000) {
+        if (isset($_SERVER['CONTENT_LENGTH']) && (int)$_SERVER['CONTENT_LENGTH'] > 6000000) {
             throw new DivanApiError(413, 'request_too_large', 'درخواست بیش از حد بزرگ است.');
         }
         $type = isset($_SERVER['CONTENT_TYPE']) ? strtolower(trim(explode(';', $_SERVER['CONTENT_TYPE'])[0])) : '';
@@ -50,7 +51,7 @@ try {
             if (!is_array($input) || json_last_error() !== JSON_ERROR_NONE) {
                 throw new DivanApiError(400, 'invalid_json', 'بدنه JSON معتبر نیست.');
             }
-        } elseif ($type !== 'application/x-www-form-urlencoded') {
+        } elseif ($type !== 'application/x-www-form-urlencoded' && $type !== 'multipart/form-data') {
             throw new DivanApiError(415, 'unsupported_content_type', 'نوع بدنه درخواست معتبر نیست.');
         }
     }
@@ -68,8 +69,8 @@ try {
         throw new RuntimeException('Database connection failed');
     }
     if (!$connect->query("SET SESSION sql_mode = 'STRICT_ALL_TABLES'")) throw new RuntimeException('Cannot enforce database validation');
-    $api = new DivanMobileApi(new DivanMySqlStore($connect), $config['token_ttl']);
-    $body = $api->handle($method, $action, $input, $bearer, isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : 'unknown');
+    $api = new DivanMobileApi(new DivanMySqlStore($connect), $config['token_ttl'], new DivanCategoryImages(__DIR__.'/upload/category'));
+    $body = $api->handle($method, $action, $input, $bearer, isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : 'unknown', null, $_FILES);
     $connect->close();
     divan_emit(200, $body);
 } catch (DivanApiError $error) {

@@ -3,3 +3,6 @@ includes/token_config.php
 *.zip
 .env
 .DS_Store
+
+node_modules/
+*.log

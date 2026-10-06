@@ -73,6 +73,44 @@ class DivanMySqlStore {
     public function revokeToken($hash) {
         $this->query('DELETE FROM divan_api_tokens WHERE token_hash = ?', array($hash));
     }
+    public function categoryRecord($id) {
+        $rows = $this->query('SELECT cid, category_name, category_image, author, status FROM tbl_news_category WHERE cid = ?', array($id));
+        return count($rows) === 1 ? $rows[0] : null;
+    }
+    public function createCategory($input, $image) {
+        $result = $this->query('INSERT INTO tbl_news_category (category_name, category_image, author) VALUES (?, ?, ?)', array($input['category_name'], $image, $input['author']));
+        return (string)$result['id'];
+    }
+    public function updateCategory($id, $input, $image) {
+        $this->query('UPDATE tbl_news_category SET category_name = ?, author = ?, category_image = ? WHERE cid = ?', array($input['category_name'], $input['author'], $image, $id));
+    }
+    public function deleteCategory($id) {
+        // Legacy MyISAM cannot atomically cascade. Only empty categories may be
+        // deleted; move/delete their articles explicitly first.
+        $result = $this->query('DELETE FROM tbl_news_category WHERE cid = ? AND NOT EXISTS (SELECT 1 FROM tbl_news WHERE cat_id = ?)', array($id, $id));
+        return (int)$result['affected'];
+    }
+    public function stats() {
+        $rows = $this->query('SELECT (SELECT COUNT(*) FROM tbl_news_category) AS categories, (SELECT COUNT(*) FROM tbl_news) AS posts');
+        return $rows[0];
+    }
+    public function posts($page, $search, $category) {
+        $where = array(); $params = array();
+        if ($search !== '') { $where[] = '(news_heading LIKE ? OR news_description LIKE ?)'; $params[] = '%'.$search.'%'; $params[] = '%'.$search.'%'; }
+        if ($category !== null) { $where[] = 'cat_id = ?'; $params[] = $category; }
+        $filter = $where ? ' WHERE '.implode(' AND ', $where) : '';
+        $total = $this->query('SELECT COUNT(*) AS total FROM tbl_news'.$filter, $params);
+        $rows = $this->query('SELECT nid, news_heading, cat_id, news_date FROM tbl_news'.$filter.' ORDER BY nid DESC LIMIT 50 OFFSET '.(($page - 1) * 50), $params);
+        return array('posts' => $rows, 'total' => (int)$total[0]['total'], 'page' => $page);
+    }
+    public function account($username) {
+        $rows = $this->query('SELECT Username, Email FROM tbl_user WHERE Username = ?', array($username));
+        return $rows[0];
+    }
+    public function updateAccount($username, $email, $passwordHash) {
+        if ($passwordHash === null) $this->query('UPDATE tbl_user SET Email = ? WHERE Username = ?', array($email, $username));
+        else $this->query('UPDATE tbl_user SET Email = ?, Password = ? WHERE Username = ?', array($email, $passwordHash, $username));
+    }
     public function category($id) {
         $rows = $this->query('SELECT cid FROM tbl_news_category WHERE cid = ?', array($id));
         return count($rows) === 1;
@@ -90,11 +128,17 @@ class DivanMySqlStore {
         return $this->query('SELECT cid, category_name, category_image, author, status FROM tbl_news_category ORDER BY cid DESC');
     }
     public function createArticle($input) {
-        $result = $this->query('INSERT INTO tbl_news (news_heading, cat_id, news_date, news_description, news_image) VALUES (?, ?, ?, ?, ?)', array($input['news_heading'], $input['cid'], $input['news_date'], $input['news_description'], ''));
+        // INSERT...SELECT locks the category for this statement on MyISAM too.
+        $result = $this->query("INSERT INTO tbl_news (news_heading, cat_id, news_date, news_description, news_image) SELECT ?, cid, ?, ?, '' FROM tbl_news_category WHERE cid = ?", array($input['news_heading'], $input['news_date'], $input['news_description'], $input['cid']));
+        if (!(int)$result['affected']) throw new DivanApiError(409, 'category_changed', 'دسته پیش از ذخیره حذف شده است.');
         return (string)$result['id'];
     }
     public function updateArticle($id, $input) {
-        $this->query('UPDATE tbl_news SET news_heading = ?, cat_id = ?, news_date = ?, news_description = ? WHERE nid = ?', array($input['news_heading'], $input['cid'], $input['news_date'], $input['news_description'], $id));
+        $result = $this->query('UPDATE tbl_news SET news_heading = ?, cat_id = ?, news_date = ?, news_description = ? WHERE nid = ? AND EXISTS (SELECT 1 FROM tbl_news_category WHERE cid = ?)', array($input['news_heading'], $input['cid'], $input['news_date'], $input['news_description'], $id, $input['cid']));
+        if (!(int)$result['affected']) {
+            if (!$this->category($input['cid'])) throw new DivanApiError(409, 'category_changed', 'دسته پیش از ذخیره حذف شده است.');
+            if (!$this->article($id)) throw new DivanApiError(404, 'article_not_found', 'مطلب دیگر وجود ندارد.');
+        }
     }
     public function deleteArticle($id) {
         $this->query('DELETE FROM tbl_news WHERE nid = ?', array($id));
@@ -104,8 +148,10 @@ class DivanMySqlStore {
 class DivanMobileApi {
     private $store;
     private $ttl;
-    public function __construct($store, $ttl = 86400) {
+    private $images;
+    public function __construct($store, $ttl = 86400, $images = null) {
         $this->store = $store;
+        $this->images = $images;
         $this->ttl = max(60, min((int)$ttl, 604800));
     }
     private function id($value) {
@@ -146,7 +192,7 @@ class DivanMobileApi {
         }
         return bin2hex($bytes);
     }
-    public function handle($method, $action, $input, $bearer, $ip, $now = null) {
+    public function handle($method, $action, $input, $bearer, $ip, $now = null, $files = array()) {
         $now = $now === null ? time() : $now;
         if ($action === '') {
             if ($method !== 'GET') throw new DivanApiError(405, 'method_not_allowed', 'این مسیر فقط برای خواندن است.');
@@ -163,10 +209,10 @@ class DivanMobileApi {
             }
             return $rows ? array('AndroidEbookApp' => $rows) : array();
         }
-        if (!in_array($action, array('login', 'me', 'logout', 'create', 'update', 'delete'), true)) {
+        if (!in_array($action, array('login', 'me', 'logout', 'create', 'update', 'delete', 'stats', 'posts', 'account', 'account_update', 'category_create', 'category_update', 'category_delete'), true)) {
             throw new DivanApiError(404, 'unknown_action', 'این عملیات وجود ندارد.');
         }
-        $requiredMethod = $action === 'me' ? 'GET' : 'POST';
+        $requiredMethod = in_array($action, array('me', 'stats', 'posts', 'account'), true) ? 'GET' : 'POST';
         if ($method !== $requiredMethod) throw new DivanApiError(405, 'method_not_allowed', 'روش درخواست معتبر نیست.');
         if ($action === 'login') {
             list($username, $password) = $this->credentials($input);
@@ -189,6 +235,58 @@ class DivanMobileApi {
         if ($action === 'logout') {
             $this->store->revokeToken(hash('sha256', $bearer));
             return array('ok' => true);
+        }
+        if ($action === 'stats') return array('ok' => true, 'stats' => $this->store->stats());
+        if ($action === 'posts') {
+            $page = isset($input['page']) ? (int)$this->id($input['page']) : 1;
+            if ($page > 1000000) throw new DivanApiError(422, 'invalid_page', 'شماره صفحه معتبر نیست.');
+            $search = isset($input['q']) ? $input['q'] : '';
+            if (!is_string($search) || strlen($search) > 400) throw new DivanApiError(422, 'invalid_search', 'جستجو معتبر نیست.');
+            $category = isset($input['category_id']) ? $this->id($input['category_id']) : null;
+            return array_merge(array('ok' => true), $this->store->posts($page, $search, $category));
+        }
+        if ($action === 'account') return array('ok' => true, 'account' => $this->store->account($username));
+        if ($action === 'account_update') {
+            $email = isset($input['email']) ? $input['email'] : null;
+            if (!is_string($email) || strlen($email) > 100 || !filter_var($email, FILTER_VALIDATE_EMAIL)) throw new DivanApiError(422, 'invalid_email', 'ایمیل معتبر وارد کنید.');
+            $passwordHash = null;
+            $changePassword = isset($input['new_password']) && $input['new_password'] !== '';
+            if ($changePassword) {
+                foreach (array('old_password', 'new_password', 'confirm_password') as $key) {
+                    if (!isset($input[$key]) || !is_string($input[$key]) || strlen($input[$key]) > 4096) throw new DivanApiError(422, 'invalid_password', 'رمزهای ورود را کامل کنید.');
+                }
+                $user = $this->store->user($username);
+                if (!hash_equals($user['Password'], hash('sha256', strtolower($username).$input['old_password']))) throw new DivanApiError(422, 'invalid_password', 'رمز فعلی درست نیست.');
+                if ($input['new_password'] !== $input['confirm_password']) throw new DivanApiError(422, 'password_mismatch', 'تکرار رمز مطابقت ندارد.');
+                $passwordHash = hash('sha256', strtolower($username).$input['new_password']);
+            }
+            $this->store->updateAccount($username, $email, $passwordHash);
+            return array('ok' => true, 'reauthenticate' => $changePassword);
+        }
+        if ($action === 'category_delete') {
+            $id = $this->id(isset($input['id']) ? $input['id'] : null);
+            $affected = $this->store->deleteCategory($id);
+            if (!$affected && $this->store->category($id)) throw new DivanApiError(409, 'category_not_empty', 'دسته دارای مطلب است؛ ابتدا مطالب را منتقل یا حذف کنید.');
+            return array('ok' => true, 'cid' => $id);
+        }
+        if ($action === 'category_create' || $action === 'category_update') {
+            foreach (array('category_name' => 255, 'author' => 50) as $key => $limit) {
+                if (!isset($input[$key]) || !is_string($input[$key]) || trim($input[$key]) === '' || !preg_match('//u', $input[$key]) || preg_match_all('/./us', $input[$key], $unused) > $limit || preg_match('/[\xF0-\xF4][\x80-\xBF]{3}/', $input[$key])) throw new DivanApiError(422, 'invalid_category', 'نام دسته و نویسنده را کامل و با طول مجاز وارد کنید.');
+            }
+            $previous = null;
+            if ($action === 'category_update') {
+                $id = $this->id(isset($input['id']) ? $input['id'] : null);
+                $previous = $this->store->categoryRecord($id);
+                if (!$previous) throw new DivanApiError(404, 'category_not_found', 'دسته وجود ندارد.');
+            }
+            $image = $previous ? $previous['category_image'] : '';
+            if (isset($files['category_image']) && $files['category_image']['error'] !== UPLOAD_ERR_NO_FILE) {
+                if (!$this->images) throw new RuntimeException('Image storage unavailable');
+                $image = $this->images->save($files['category_image']);
+            } elseif ($previous === null) throw new DivanApiError(422, 'image_required', 'تصویر دسته را انتخاب کنید.');
+            if ($previous) $this->store->updateCategory($id, $input, $image);
+            else $id = $this->store->createCategory($input, $image);
+            return array('ok' => true, 'cid' => $id);
         }
         if ($action === 'delete') {
             $id = $this->id(isset($input['id']) ? $input['id'] : null);

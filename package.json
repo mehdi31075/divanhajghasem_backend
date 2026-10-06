@@ -1,0 +1,11 @@
+{
+  "name": "divan-token-panel-tests",
+  "private": true,
+  "scripts": {
+    "test": "node --experimental-vm-modules --test tests/panel_*.test.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "26.1.0"
+  },
+  "type": "module"
+}
