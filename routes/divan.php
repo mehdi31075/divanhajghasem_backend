@@ -1,0 +1,24 @@
+<?php
+
+use App\Http\Controllers\ApiController;
+use App\Http\Controllers\ReaderController;
+use App\Http\Middleware\ApiTransport;
+use Illuminate\Support\Facades\Route;
+
+// No web/session middleware: Bearer is the only authorization mechanism.
+Route::middleware(ApiTransport::class)->group(function () {
+    Route::match(['GET', 'OPTIONS'], '/api.php', ReaderController::class);
+    Route::match(['GET', 'POST', 'OPTIONS'], '/mobile-api.php', ApiController::class);
+});
+
+$panel = fn () => response()->view('panel')->header('Cache-Control', 'no-store')
+    ->header('X-Content-Type-Options', 'nosniff')->header('X-Frame-Options', 'DENY');
+Route::get('/', $panel)->name('panel');
+// Old bookmarks still open the new panel. They do not accept cookie mutations.
+foreach (['index', 'dashboard', 'story', 'category', 'admin', 'setting', 'add-menu', 'edit-menu', 'delete-menu', 'menu-detail', 'add-category', 'edit-category', 'delete-category', 'logout'] as $name) {
+    Route::get('/'.$name.'.php', $panel);
+    Route::post('/'.$name.'.php', fn () => response()->json([
+        'ok' => false, 'error' => 'legacy_panel_retired', 'message' => 'از پنل جدید و ورود با توکن استفاده کنید.',
+    ], 410));
+}
+Route::any('/public/{path}', fn () => response()->json(['ok' => false, 'error' => 'legacy_panel_retired'], 410))->where('path', '.*');

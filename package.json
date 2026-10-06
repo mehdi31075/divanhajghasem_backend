@@ -1,11 +1,16 @@
 {
-  "name": "divan-token-panel-tests",
+  "name": "divan-laravel-panel",
   "private": true,
   "scripts": {
-    "test": "node --experimental-vm-modules --test tests/panel_*.test.mjs"
+    "test": "node --experimental-vm-modules --test tests/panel_*.test.mjs",
+    "build": "node tools/build-assets.mjs"
   },
   "devDependencies": {
     "jsdom": "26.1.0"
   },
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "dompurify": "3.4.16",
+    "quill": "2.0.3"
+  }
 }

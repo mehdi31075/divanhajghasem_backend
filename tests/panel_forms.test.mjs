@@ -5,15 +5,15 @@ import {execFileSync} from 'node:child_process';
 import vm from 'node:vm';
 import {JSDOM} from 'jsdom';
 const php=process.env.DIVAN_TEST_PHP || 'php';
-const html=execFileSync(php,['-r', '$_SERVER["REQUEST_METHOD"]="GET";require "includes/panel.php";'],{encoding:'utf8'});
-const sources=await Promise.all(['app','client'].map(name=>fs.readFile(`assets/panel/${name}.js`,'utf8')));
+const html=execFileSync(php,['tests/render_panel.php'],{encoding:'utf8'});
+const sources=await Promise.all(['app','client'].map(name=>fs.readFile(`public/assets/panel/${name}.js`,'utf8')));
 const token='a'.repeat(64);
 const tick=()=>new Promise(resolve=>setTimeout(resolve,10));
 async function waitFor(fn){for(let i=0;i<100;i++){if(fn())return;await tick();}throw new Error('Timed out waiting for form state');}
-async function fixture(){
+async function fixture({rich=false}={}){
  const dom=new JSDOM(html,{url:'https://fixture.test/index.php',runScripts:'outside-only'});
  const state={categories:[{cid:'61',category_name:'دسته اول',category_image:'one.png',author:'نویسنده',status:'1'}],posts:[],mutations:0,expired:false,loseNextResponse:false};
- dom.window.confirm=()=>true;
+ dom.window.confirm=()=>true;dom.window.scrollTo=()=>{};
  dom.window.fetch=async(url,init)=>{
   assert.equal(init.credentials,'omit');const action=url.searchParams.get('action')||'';
   const fields=init.body ? Object.fromEntries(init.body.entries()) : {};
@@ -37,6 +37,10 @@ async function fixture(){
   return reply({ok:true});
  };
  const context=dom.getInternalVMContext();
+ if(rich){
+  vm.runInContext(await fs.readFile('public/assets/purify/purify.min.js','utf8'),context);
+  vm.runInContext(await fs.readFile('public/assets/quill/quill.js','utf8'),context);
+ }
  const client=new vm.SourceTextModule(sources[1],{context,identifier:'client.js'});
  const app=new vm.SourceTextModule(sources[0],{context,identifier:'app.js'});
  await app.link(()=>client);await app.evaluate();
@@ -77,5 +81,24 @@ test('lost create response changes the button to read-only reconciliation',async
  const f=await fixture();try{await f.login();await waitFor(()=>f.doc.querySelector('[data-route="post-new"]'));f.click('[data-route="post-new"]');await waitFor(()=>f.doc.querySelector('#post-form'));
   f.input('[name=news_heading]','پیش نویس');f.input('[name=news_date]','زیرعنوان');f.input('#body','متن محفوظ');f.state.loseNextResponse=true;f.submit('#post-form');await waitFor(()=>f.doc.querySelector('#post-form button[type=submit]').textContent==='بررسی نتیجه');
   assert.equal(f.state.mutations,1);f.submit('#post-form');await waitFor(()=>!f.doc.querySelector('#post-form'));assert.equal(f.state.posts.length,1);assert.equal(f.state.mutations,1);
+ }finally{f.dom.window.close();}
+});
+
+test('real Quill preserves untouched legacy HTML and sanitizes edited exports',async()=>{
+ const f=await fixture({rich:true});try{
+  const original='<p dir="rtl"><strong>متن قدیمی</strong></p>';
+  f.state.posts.push({nid:'9',cat_id:'61',news_heading:'عنوان قبلی',news_date:'زیرعنوان',news_description:original});
+  await f.login();await waitFor(()=>f.doc.querySelector('[data-route="posts"]'));
+  f.click('[data-route="posts"]');await waitFor(()=>f.doc.querySelector('[data-route="post/9"]'));
+  f.click('[data-route="post/9"]');await waitFor(()=>f.doc.querySelector('.ql-container'));
+  f.input('[name=news_heading]','عنوان تازه');f.submit('#post-form');await waitFor(()=>!f.doc.querySelector('#post-form'));
+  assert.equal(f.state.posts[0].news_description,original);
+  f.click('[data-route="post/9"]');await waitFor(()=>f.doc.querySelector('.ql-container'));
+  const editor=f.dom.window.Quill.find(f.doc.querySelector('.ql-container'));
+  editor.insertText(0,'تغییر ', 'user');
+  editor.getSemanticHTML=()=>'<p>متن ویرایش‌شده</p><img src="x" onerror="window.pwned=1"><script>window.pwned=1</script>';
+  f.submit('#post-form');await waitFor(()=>!f.doc.querySelector('#post-form'));
+  assert.equal(f.state.posts[0].news_description,'<p>متن ویرایش‌شده</p><img src="x">');
+  assert.equal(f.dom.window.pwned,undefined);
  }finally{f.dom.window.close();}
 });

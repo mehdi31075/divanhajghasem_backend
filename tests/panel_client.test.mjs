@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {TokenApi, ApiError, escapeHtml, imageUrl, matchingWrite} from '../assets/panel/client.js';
+import {TokenApi, ApiError, escapeHtml, imageUrl, matchingWrite} from '../public/assets/panel/client.js';
 const token = 'a'.repeat(64);
 const json = (data, status = 200) => new Response(JSON.stringify(data), {status, headers: {'Content-Type':'application/json'}});
 function storage() { const entries = new Map(); return {entries, getItem: k => entries.get(k), setItem: (k,v) => entries.set(k,v), removeItem: k => entries.delete(k)}; }
