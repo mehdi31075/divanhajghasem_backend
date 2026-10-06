@@ -1,3 +1,5 @@
+<div dir="rtl" align="right">
+
 # استقرار Laravel بدون از کار افتادن خواندن اپ قدیمی
 
 نسخهٔ کد قبلی در تاریخچهٔ Git (baseline `7678bac` و نسخهٔ پنل توکنی `85e3550`) موجود است. نصب لاراول جایگزین معماری PHP قبلی می‌شود؛ پوشه‌ها و فایل‌های قدیمی را با پروژهٔ جدید مخلوط نکنید.
@@ -10,6 +12,8 @@
 4. فایل‌های واقعی زندهٔ `upload/` را به `public/upload/` کپی کنید و مسیر `/upload/category/...` را بدون تغییر حفظ کنید. تصویر موجود روی سرور را با snapshot قدیمی مخزن بازنویسی نکنید.
 5. از `.env.example` یک `.env` خصوصی بسازید. مشخصات اتصال دیتابیس فعلی را از تنظیمات قبلی هاست وارد کنید. `APP_URL=https://divanhajghasem.ir`، `APP_ENV=production`، `APP_DEBUG=false`، `DIVAN_REQUIRE_HTTPS=true` و charset مناسب جدول فعلی (`utf8`) باشد. رمزها به Git اضافه نشوند.
 
+<div dir="ltr" align="left">
+
 ```sh
 composer install --no-dev --prefer-dist --optimize-autoloader
 php artisan key:generate --force
@@ -17,6 +21,8 @@ php artisan migrate --force
 php artisan divan:check
 php artisan optimize
 ```
+
+</div>
 
 `migrate` در دیتابیس موجود فقط جدول‌های مفقود و ثبت migrations را اضافه می‌کند؛ نام و دادهٔ جدول‌های اصلی تغییر نمی‌کنند. **migrate:fresh / migrate:refresh / db:wipe اجرا نکنید.** فایل SQLite توسعه روی سرور آپلود نشود. هیچ seed با رمز پیش‌فرض وجود ندارد.
 
@@ -29,6 +35,8 @@ Document root باید دقیقاً **`PROJECT/public`** باشد. تنظیم ب
 Apache: فایل `public/.htaccess` همراه پروژه و mod_rewrite فعال باشد. فایل فیزیکی قدیمی `api.php` و `mobile-api.php` در document root باقی نماند؛ وگرنه مسیرهای Laravel را دور می‌زنند. `/api.php` یک URL لاراول است و باید به public/index.php rewrite شود. هدر Authorization نیز در .htaccess حفظ شده است.
 
 Nginx نمونه، با مسیر پروژهٔ خودتان:
+
+<div dir="ltr" align="left">
 
 ```nginx
 root /path/to/divan/public;
@@ -46,6 +54,8 @@ location ~ \.php$ { rewrite ^ /index.php last; }
 location ~ /\. { deny all; }
 ```
 
+</div>
+
 خواندن `/api.php` با HTTP مجاز بماند تا کلاینت قدیمی نیازمند تغییر نشود. برای پنل از HTTPS معتبر استفاده کنید؛ اعتبار گواهی فعلی سایت منقضی گزارش شده و باید تمدید شود. پشت reverse proxy، HTTPS را در تنظیمات سرور به PHP منتقل کنید؛ هدرهای proxy ناشناس را بدون محدودیت trust نکنید.
 
 ## بررسی پیش از جایگزینی نهایی
@@ -62,3 +72,5 @@ Flutter برای مدیریت به طور پیش‌فرض `https://divanhajghase
 ## بازگشت
 
 اگر بررسی استقرار مشکل داشت، document root را به نسخهٔ قبلی برگردانید. migration جدول‌های اصلی را تغییر نمی‌دهد. اگر بعد از استقرار رمز مدیر تغییر کرده باشد، پنل PHP بسیار قدیمی bcrypt را نمی‌شناسد؛ از backup حساب‌ها برای بازگشت استفاده کنید یا پنل توکنی `85e3550` را هم با پشتیبانی bcrypt آماده کنید. مطالبی که پس از انتقال ایجاد شده‌اند را پیش از بازیابی backup جداگانه حفظ کنید. هیچ rollback یا حذف خودکار داده انجام نمی‌شود.
+
+</div>

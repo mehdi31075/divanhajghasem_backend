@@ -1,3 +1,5 @@
+<div dir="rtl" align="right">
+
 # دیوان — Laravel 13
 
 بک‌اند و پنل فارسی دیوان روی Laravel 13.35، PHP 8.3+ و MySQL/MariaDB ساخته شده‌اند. پنل Blade و JavaScript، راست‌به‌چپ و واکنش‌گراست؛ فونت Vazirmatn، Quill و DOMPurify همراه پروژه‌اند و از CDN بارگیری نمی‌شوند. Node فقط برای آزمون/به‌روزرسانی بسته‌های پنل لازم است؛ خروجی آماده در `public/assets/` قرار دارد.
@@ -50,6 +52,8 @@ Quill 2.0.3 یک advisory برای خروجی HTML دارد (GHSA-v3m3-f69x-jf25
 
 ## توسعه و آزمون
 
+<div dir="ltr" align="left">
+
 ```sh
 composer install
 cp .env.example .env
@@ -66,6 +70,8 @@ npm run build
 npm test
 ```
 
+</div>
+
 هیچ سروری با این دستورات اجرا نمی‌شود. برای نصب خالی، حساب مدیر را با `php artisan divan:create-admin USERNAME EMAIL` بسازید؛ رمز به صورت پنهان پرسیده می‌شود. برای دیتابیس فعلی این دستور لازم نیست و حساب موجود را بازنویسی نمی‌کند.
 
 در این سیستم PHP لاراول در `/opt/homebrew/opt/php@8.3/bin/php` است. Composer ابزار نصب است و داخل مخزن commit نمی‌شود. PHPUnit روی SQLite ایزوله و آزمون مرورگر با fixture اجرا شده‌اند؛ دیتابیس زندهٔ سایت یا MySQL واقعی تغییر نکرده است.
@@ -73,3 +79,5 @@ npm test
 آزمون نهایی: ۱۰ تست HTTP با ۱۴۴ assertion، ۴۶ بررسی منطق API، ۳۱ بررسی مدیریت و ۱۳ تست پنل موفق شدند. Chrome واقعی با route fixture برای ورود، ایجاد نوشته با Quill، نمایش تصاویر و نمای موبایل بررسی شد.
 
 **استقرار:** [DEPLOYMENT.md](DEPLOYMENT.md). کد روی GitHub است؛ سایت اصلی هنوز به Laravel منتقل نشده. بررسی ۲۰۲۶/۱۰/۰۷ نشان داد گواهی TLS سایت فعلی منقضی است؛ پیش از ورود واقعی آن را تمدید کنید، نه اینکه اعتبارسنجی TLS را در اپ خاموش کنید.
+
+</div>
