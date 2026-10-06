@@ -2,7 +2,7 @@ Laravel deployment replaces the previous per-file PHP upload.
 Read DEPLOYMENT.md before switching the document root.
 Deploy app/, bootstrap/, config/, database/migrations/, resources/views/, routes/, storage/ directory skeleton, artisan, composer.json, composer.lock and public/.
 Install vendor/ with composer install --no-dev on the target/build environment.
-Create private .env on the server; never copy the development .env or SQLite database.
+Create private .env on the server; never publish .env, .env.testing or private SQL dumps. Use the existing hosting MariaDB database; no backend SQLite database is used.
 Keep all live upload images, copying upload/ to public/upload/ without overwriting newer files.
 Document root: PROJECT/public. Remove old physical api.php/mobile-api.php and PHP forms from the new document root; those URLs now use Laravel routes.
 Do not publish the private project root, Git metadata, old includes/variables.php, tests or local backups.

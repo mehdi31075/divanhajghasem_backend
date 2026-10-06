@@ -137,7 +137,7 @@ class DivanApiTest extends TestCase
     {
         $this->withToken($this->login());
         $fields = $this->postFields();
-        foreach ([['cid' => "61' OR 1=1"], ['news_description' => ''], ['news_heading' => str_repeat('آ', 501)], ['news_description' => str_repeat('آ', 33000)]] as $invalid) {
+        foreach ([['cid' => "61' OR 1=1"], ['news_description' => ''], ['news_heading' => str_repeat('آ', 501)], ['news_description' => str_repeat('آ', 2500001)]] as $invalid) {
             $this->postJson('/mobile-api.php?action=create', array_replace($fields, $invalid))->assertUnprocessable();
         }
         $this->assertDatabaseCount('tbl_news', 0);
@@ -145,6 +145,16 @@ class DivanApiTest extends TestCase
         $this->getJson('/api.php?cat_id[]=61')->assertUnprocessable();
         $this->getJson('/mobile-api.php?action=login')->assertStatus(405);
         $this->postJson('/api.php', [])->assertStatus(405);
+    }
+
+    public function test_longtext_content_round_trips_beyond_the_old_text_limit(): void
+    {
+        $this->withToken($this->login());
+        $body = str_repeat('متن فارسی ', 8000);
+        $this->assertGreaterThan(65535, strlen($body));
+        $id = $this->postJson('/mobile-api.php?action=create', array_replace($this->postFields(), ['news_description' => $body]))->assertOk()->json('nid');
+        $this->flushHeaders();
+        $this->getJson('/api.php?nid='.$id)->assertJsonPath('AndroidEbookApp.0.news_description', $body);
     }
 
     public function test_transport_cors_https_and_old_panel_endpoints(): void

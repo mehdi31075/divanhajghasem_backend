@@ -1,6 +1,7 @@
 /.env
 /.env.*
 !/.env.example
+!/.env.testing.example
 /vendor/
 /node_modules/
 /public/hot
@@ -26,3 +27,4 @@
 /output/playwright/
 /.playwright-cli/
 /playwright-cli.json
+*.sql

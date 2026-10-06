@@ -34,7 +34,7 @@ return new class extends Migration
                 $table->integer('news_status')->default(1);
                 $table->string('news_date', 255);
                 $table->text('news_image');
-                $table->text('news_description');
+                $table->longText('news_description');
             });
         }
         if (! Schema::hasTable('divan_api_tokens')) {

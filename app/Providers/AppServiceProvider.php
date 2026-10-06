@@ -17,6 +17,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // Laravel merges built-in connections into config/database.php.
+        // Keep only the drivers this backend actually uses, including after config:cache.
+        $config = $this->app['config'];
+        $config->set('database.connections', array_intersect_key(
+            $config->get('database.connections'), array_flip(['mysql', 'mariadb']),
+        ));
         $this->app->bind(DivanApi::class, fn ($app) => new DivanApi(
             $app->make(DivanRepository::class), config('divan.token_ttl'),
             $app->make(CategoryImages::class),

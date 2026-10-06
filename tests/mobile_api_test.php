@@ -95,10 +95,10 @@ rejected(function () use ($call, $bad, $token) {
     $call('POST', 'create', $bad, $token);
 }, 422, 'legacy varchar character limit');
 $bad = $input;
-$bad['news_description'] = str_repeat('a', 65536);
+$bad['news_description'] = str_repeat('a', 5000001);
 rejected(function () use ($call, $bad, $token) {
     $call('POST', 'create', $bad, $token);
-}, 422, 'legacy TEXT byte limit');
+}, 422, 'API body byte limit');
 $bad = $input;
 $bad['news_description'] = '😀';
 rejected(function () use ($call, $bad, $token) {
@@ -130,4 +130,4 @@ rejected(function () use ($call) {
 rejected(function () use ($call) {
     $call('POST', 'login', ['username' => 'missing', 'password' => 'wrong'], null, 2000000901);
 }, 401, 'rate window expires');
-echo 'PASS: '.$checks." backend checks (production SQL on isolated SQLite fixture).\n";
+echo 'PASS: '.$checks." backend checks (production SQL on isolated MySQL/MariaDB test database).\n";

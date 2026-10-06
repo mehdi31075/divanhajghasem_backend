@@ -242,7 +242,7 @@ class DivanApi
                 throw new ApiError(422, 'missing_field', 'عنوان، عنوان فرعی، دسته و متن را کامل کنید.');
             }
         }
-        if (preg_match_all('/./us', $input['news_heading'], $unused) > 500 || preg_match_all('/./us', $input['news_date'], $unused) > 255 || strlen($input['news_description']) > 65535) {
+        if (preg_match_all('/./us', $input['news_heading'], $unused) > 500 || preg_match_all('/./us', $input['news_date'], $unused) > 255 || strlen($input['news_description']) > 5000000) {
             throw new ApiError(422, 'field_too_long', 'طول متن بیش از حد مجاز است.');
         }
         foreach (['news_heading', 'news_date', 'news_description'] as $key) {

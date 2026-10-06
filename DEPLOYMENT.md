@@ -10,7 +10,7 @@
 2. از **کل دیتابیس، فایل‌های کد و تمام `upload/` زنده** backup قابل بازیابی بگیرید. تصاویر همراه مخزن فقط snapshot فایل پیوست‌اند؛ ممکن است سرور تصاویر جدیدتری داشته باشد.
 3. پروژه را ابتدا در یک مسیر خصوصی تازه خارج از document root آپلود/clone کنید. `.env` و `vendor` و `storage` نباید از وب قابل خواندن باشند. `.git` هم خصوصی بماند.
 4. فایل‌های واقعی زندهٔ `upload/` را به `public/upload/` کپی کنید و مسیر `/upload/category/...` را بدون تغییر حفظ کنید. تصویر موجود روی سرور را با snapshot قدیمی مخزن بازنویسی نکنید.
-5. از `.env.example` یک `.env` خصوصی بسازید. مشخصات اتصال دیتابیس فعلی را از تنظیمات قبلی هاست وارد کنید. `APP_URL=https://divanhajghasem.ir`، `APP_ENV=production`، `APP_DEBUG=false`، `DIVAN_REQUIRE_HTTPS=true` و charset مناسب جدول فعلی (`utf8`) باشد. رمزها به Git اضافه نشوند.
+5. از `.env.example` یک `.env` خصوصی بسازید. مشخصات اتصال دیتابیس فعلی را از تنظیمات قبلی هاست وارد کنید. `APP_URL=https://divanhajghasem.ir`، `APP_ENV=production`، `APP_DEBUG=false`، `DIVAN_REQUIRE_HTTPS=true` و `DB_CONNECTION=mysql`، `DB_HOST=localhost`، `DB_DATABASE=divanhaj_db`، `DB_USERNAME=divanhaj_db`، `DB_CHARSET=utf8mb3` و `DB_COLLATION=utf8mb3_general_ci` باشد. رمزها به Git اضافه نشوند.
 
 <div dir="ltr" align="left">
 
@@ -24,9 +24,9 @@ php artisan optimize
 
 </div>
 
-`migrate` در دیتابیس موجود فقط جدول‌های مفقود و ثبت migrations را اضافه می‌کند؛ نام و دادهٔ جدول‌های اصلی تغییر نمی‌کنند. **migrate:fresh / migrate:refresh / db:wipe اجرا نکنید.** فایل SQLite توسعه روی سرور آپلود نشود. هیچ seed با رمز پیش‌فرض وجود ندارد.
+`migrate` در دیتابیس موجود فقط جدول‌های مفقود و ثبت migrations را اضافه می‌کند؛ نام و دادهٔ جدول‌های اصلی تغییر نمی‌کنند. **migrate:fresh / migrate:refresh / db:wipe اجرا نکنید.** بک‌اند SQLite ندارد؛ dump خصوصی و `.env.testing` روی وب منتشر نشوند. فایل SQL ارسالی را دوباره روی دیتابیس موجود import نکنید. هیچ seed با رمز پیش‌فرض وجود ندارد.
 
-دسترسی نوشتن برای کاربر PHP فقط به `storage/`، `bootstrap/cache/` و `public/upload/category/` بدهید؛ از chmod 777 عمومی استفاده نکنید. جدول‌های MyISAM موجود به صورت خودکار به InnoDB تبدیل نمی‌شوند.
+دسترسی نوشتن برای کاربر PHP فقط به `storage/`، `bootstrap/cache/` و `public/upload/category/` بدهید؛ از chmod 777 عمومی استفاده نکنید. جدول‌های MyISAM موجود به صورت خودکار به InnoDB تبدیل نمی‌شوند. dump ارسالی از MariaDB 10.6.24 است؛ ستون بدنهٔ نوشته `LONGTEXT` و جدول‌های اصلی `utf8mb3` هستند. اجرای تست‌های پاک‌کننده فقط روی دیتابیس مستقل با پسوند `_test` مجاز است؛ کاربر تست به دیتابیس اصلی دسترسی نداشته باشد.
 
 ## انتقال وب
 
