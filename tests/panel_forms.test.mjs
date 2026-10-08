@@ -109,6 +109,9 @@ test('real CKEditor preserves untouched legacy HTML and sanitizes edited exports
   assert.equal(f.state.posts[0].news_description,original);
   f.click('[data-route="post/9"]');await waitFor(()=>f.doc.querySelector('.ck-editor__editable') && !f.doc.querySelector('#post-form button[type=submit]').disabled);
   const editor=f.state.richEditor;
+  const customIcons=[...f.doc.querySelectorAll('.divan-toolbar-icon')].map(icon=>icon.dataset.divanIcon);
+  assert.ok(customIcons.length>=18,`expected readable custom SVGs for most toolbar actions, got ${customIcons.length}`);
+  for(const icon of ['undo','redo','link','image','imageUrl','table','bold','italic','underline','strike','bullets','numbers','quote','align','color','background'])assert.ok(customIcons.includes(icon),`missing ${icon} toolbar SVG`);
   assert.ok(editor.plugins.has('SourceEditing'));
   assert.ok(editor.plugins.has('Table'));
   assert.ok(editor.plugins.has('ImageInsertViaUrl'));
