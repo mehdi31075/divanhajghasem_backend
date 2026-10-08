@@ -218,4 +218,62 @@ class DivanRepository
     {
         $this->query('DELETE FROM tbl_news WHERE nid = ?', [$id]);
     }
+
+    public function mediaName($filename)
+    {
+        $rows = $this->query('SELECT display_name FROM divan_media_names WHERE filename = ?', [$filename]);
+
+        return $rows[0]['display_name'] ?? null;
+    }
+
+    public function saveMediaName($filename, $name)
+    {
+        $this->query('INSERT INTO divan_media_names (filename, display_name, updated_at) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE display_name = VALUES(display_name), updated_at = VALUES(updated_at)', [$filename, $name, time()]);
+    }
+
+    public function deleteMediaName($filename)
+    {
+        $this->query('DELETE FROM divan_media_names WHERE filename = ?', [$filename]);
+    }
+
+    public function supportCountFromIp($ipHash, $since)
+    {
+        $rows = $this->query('SELECT COUNT(*) AS total FROM divan_support_messages WHERE source_ip_hash = ? AND created_at >= ?', [$ipHash, $since]);
+
+        return (int) $rows[0]['total'];
+    }
+
+    public function createSupportMessage($receiptHash, $ipHash, $message, $now)
+    {
+        $this->query('INSERT INTO divan_support_messages (receipt_hash, source_ip_hash, message, reply, created_at, replied_at) VALUES (?, ?, ?, NULL, ?, NULL)', [$receiptHash, $ipHash, $message, $now]);
+    }
+
+    public function supportMessage($receiptHash)
+    {
+        $rows = $this->query('SELECT id, message, reply, created_at, replied_at FROM divan_support_messages WHERE receipt_hash = ?', [$receiptHash]);
+
+        return $rows[0] ?? null;
+    }
+
+    public function supportMessages()
+    {
+        return $this->query('SELECT id, message, reply, created_at, replied_at FROM divan_support_messages ORDER BY id DESC LIMIT 200');
+    }
+
+    public function supportExists($id)
+    {
+        return count($this->query('SELECT id FROM divan_support_messages WHERE id = ?', [$id])) === 1;
+    }
+
+    public function replyToSupport($id, $reply, $now)
+    {
+        $result = $this->query('UPDATE divan_support_messages SET reply = ?, replied_at = ? WHERE id = ?', [$reply, $now, $id]);
+
+        return (int) $result['affected'];
+    }
+
+    public function deleteSupportMessage($id)
+    {
+        $this->query('DELETE FROM divan_support_messages WHERE id = ?', [$id]);
+    }
 }

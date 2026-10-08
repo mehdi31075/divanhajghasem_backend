@@ -46,6 +46,22 @@ test('multipart sends Bearer and lets the browser set the upload boundary', asyn
     assert.equal(init.body,fields);assert.equal(init.headers.Authorization,`Bearer ${token}`);assert.equal(init.headers['Content-Type'],undefined);return json({ok:true});}});
   api.setToken(token);await api.call('category_create',{method:'POST',fields});
 });
+test('media uploads report byte progress and send the admin Bearer token', async () => {
+  const PreviousXHR=globalThis.XMLHttpRequest; const percentages=[]; const fields=new FormData();
+  class FixtureXHR {
+    upload={}; headers={}; status=200; responseText=JSON.stringify({ok:true,media:{url:'/upload/news-media/video.mp4'}});
+    open(method,url){this.method=method;this.url=url;}
+    setRequestHeader(name,value){this.headers[name]=value;}
+    send(body){this.body=body;this.upload.onprogress({lengthComputable:true,loaded:500,total:1000});this.upload.onprogress({lengthComputable:true,loaded:1000,total:1000});this.onload();}
+  }
+  globalThis.XMLHttpRequest=FixtureXHR;
+  try {
+    const api=new TokenApi('https://fixture.test/mobile-api.php');api.setToken(token);
+    const result=await api.upload('media_upload',{fields,onProgress:value=>percentages.push(value)});
+    assert.equal(result.media.url,'/upload/news-media/video.mp4');
+    assert.deepEqual(percentages,[50,100,100]);
+  } finally { globalThis.XMLHttpRequest=PreviousXHR; }
+});
 test('anonymous public read contract and safe server text rendering', async () => {
   const api=new TokenApi('https://fixture.test/mobile-api.php',{fetcher:async(url,init)=>{assert.equal(init.headers.Authorization,undefined);return json([]);}});
   assert.deepEqual(await api.call(''),[]);

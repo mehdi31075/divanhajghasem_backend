@@ -25,6 +25,8 @@ class ContentMedia
         'video/webm' => 'webm',
     ];
 
+    public function __construct(private readonly DivanRepository $store) {}
+
     public function upload($file, $type, $now): array
     {
         if (! $file instanceof UploadedFile || ! $file->isValid() || $file->getSize() <= 0) {
@@ -60,24 +62,66 @@ class ContentMedia
             throw new RuntimeException('Media storage failed');
         }
 
-        return $this->entry($filename, $mime, (int) $file->getSize(), $now);
+        $entry = $this->entry($filename, $mime, (int) $file->getSize(), $now);
+        $this->store->saveMediaName($filename, $entry['name']);
+
+        return $entry;
     }
 
-    public function videos(): array
+    public function all(): array
     {
         $disk = Storage::disk('news_media');
         $items = [];
         foreach ($disk->files() as $path) {
             $mime = $disk->mimeType($path);
-            if (! isset(self::VIDEO_TYPES[$mime])) {
+            if (! isset(self::VIDEO_TYPES[$mime]) && ! in_array($mime, array_column(self::IMAGE_TYPES, 0), true)) {
                 continue;
             }
-            $items[] = $this->entry($path, $mime, (int) $disk->size($path), (int) $disk->lastModified($path));
+            $entry = $this->entry($path, $mime, (int) $disk->size($path), (int) $disk->lastModified($path));
+            $entry['name'] = $this->store->mediaName($path) ?? $entry['name'];
+            $entry['type'] = isset(self::VIDEO_TYPES[$mime]) ? 'video' : 'image';
+            $items[] = $entry;
         }
 
         usort($items, static fn ($a, $b) => strcmp($b['created_at'], $a['created_at']));
 
         return $items;
+    }
+
+    public function rename($filename, $name): array
+    {
+        $path = $this->safeFilename($filename);
+        $name = trim($name);
+        if ($name === '' || mb_strlen($name) > 120 || ! preg_match('//u', $name) || preg_match('/[\x00-\x1F\x7F]/u', $name)) {
+            throw new ApiError(422, 'invalid_media_name', 'نام رسانه باید بین ۱ تا ۱۲۰ نویسه باشد.');
+        }
+        $disk = Storage::disk('news_media');
+        if (! $disk->exists($path)) {
+            throw new ApiError(404, 'media_not_found', 'فایل رسانه پیدا نشد.');
+        }
+        $this->store->saveMediaName($path, $name);
+
+        return array_merge($this->entry($path, $disk->mimeType($path), (int) $disk->size($path), (int) $disk->lastModified($path)), ['name' => $name, 'type' => str_starts_with($disk->mimeType($path), 'video/') ? 'video' : 'image']);
+    }
+
+    public function delete($filename): void
+    {
+        $path = $this->safeFilename($filename);
+        $disk = Storage::disk('news_media');
+        if (! $disk->exists($path)) {
+            throw new ApiError(404, 'media_not_found', 'فایل رسانه پیدا نشد.');
+        }
+        $disk->delete($path);
+        $this->store->deleteMediaName($path);
+    }
+
+    private function safeFilename($filename): string
+    {
+        if (! is_string($filename) || $filename === '' || basename($filename) !== $filename || ! preg_match('/^[\pL\pN_-]+\.(?:jpe?g|png|gif|webp|mp4|webm)$/iu', $filename)) {
+            throw new ApiError(422, 'invalid_media_id', 'شناسهٔ فایل رسانه معتبر نیست.');
+        }
+
+        return $filename;
     }
 
     private function entry($filename, $mime, $size, $timestamp): array

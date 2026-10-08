@@ -150,10 +150,40 @@ class DivanApiTest extends TestCase
         $this->assertStringStartsWith('/upload/news-media/', $url);
         $this->assertStringEndsWith('.png', $url);
         Storage::disk('news_media')->assertExists(substr($url, strlen('/upload/news-media/')));
+        $media = $this->getJson('/mobile-api.php?action=media_list')->assertOk()->json('media.0');
+        $this->assertSame('image', $media['type']);
+        $id = basename(parse_url($media['url'], PHP_URL_PATH));
+        $this->postJson('/mobile-api.php?action=media_update', ['id' => $id, 'name' => 'تصویر یادبود'])->assertOk()->assertJsonPath('media.name', 'تصویر یادبود');
+        $this->postJson('/mobile-api.php?action=media_delete', ['id' => $id])->assertOk();
+        Storage::disk('news_media')->assertMissing($id);
         $this->post('/mobile-api.php?action=media_upload', [
             'media_type' => 'image', 'media_file' => UploadedFile::fake()->createWithContent('wrong.png', '<?php echo 1;'),
         ], ['Accept' => 'application/json'])->assertUnprocessable();
         $this->getJson('/mobile-api.php?action=media_list')->assertOk()->assertJsonPath('videos', []);
+    }
+
+    public function test_public_support_message_gets_private_receipt_and_admin_reply_returns_to_app(): void
+    {
+        config(['divan.require_https' => false]);
+        $message = "انتقاد و پیشنهاد فارسی\nسطر دوم";
+        $response = $this->postJson('/mobile-api.php?action=support_create', ['message' => $message])
+            ->assertOk()->assertJsonPath('ok', true);
+        $receipt = $response->json('receipt');
+        $this->assertMatchesRegularExpression('/^[a-f0-9]{32}$/', $receipt);
+        $this->assertDatabaseHas('divan_support_messages', ['message' => $message]);
+        $this->postJson('/mobile-api.php?action=support_check', ['receipt' => $receipt])
+            ->assertOk()->assertJsonPath('ticket.message', $message)->assertJsonPath('ticket.reply', null);
+
+        $token = $this->login();
+        $this->withToken($token)->getJson('/mobile-api.php?action=support_list')
+            ->assertOk()->assertJsonPath('messages.0.message', $message);
+        $this->withToken($token)->postJson('/mobile-api.php?action=support_reply', ['id' => '1', 'reply' => 'پاسخ مدیر'])
+            ->assertOk();
+        $this->flushHeaders();
+        $this->postJson('/mobile-api.php?action=support_check', ['receipt' => $receipt])
+            ->assertOk()->assertJsonPath('ticket.reply', 'پاسخ مدیر')->assertJsonPath('ticket.replied_at', fn ($value) => is_string($value));
+        $this->postJson('/mobile-api.php?action=support_create', ['message' => ''])
+            ->assertUnprocessable();
     }
 
     public function test_validation_preserves_database_and_public_reader_is_injection_safe(): void

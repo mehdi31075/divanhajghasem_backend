@@ -7,11 +7,11 @@
   <title>دیوان · مدیریت محتوا</title>
   <link rel="icon" href="{{ asset('assets/panel/mark.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ asset('assets/ckeditor/ckeditor5.css') }}">
-  <link rel="stylesheet" href="{{ asset('assets/panel/panel.css') }}?v=20261008-toolbar-svg">
+  <link rel="stylesheet" href="{{ asset('assets/panel/panel.css') }}?v=20261009-media-support">
   <script src="{{ asset('assets/purify/purify.min.js') }}" defer></script>
   <script src="{{ asset('assets/ckeditor/ckeditor5.umd.js') }}" defer></script>
   <script src="{{ asset('assets/ckeditor/fa.umd.js') }}" defer></script>
-  <script type="module" src="{{ asset('assets/panel/app.js') }}?v=20261008-toolbar-svg"></script>
+  <script type="module" src="{{ asset('assets/panel/app.js') }}?v=20261009-media-support"></script>
 </head>
 <body>
   <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
@@ -22,6 +22,8 @@
     <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M20 12H4m6-6-6 6 6 6"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></symbol>
     <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 4H3v16h6m3-8h9m-4-4 4 4-4 4"/></symbol>
+    <symbol id="i-media" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></symbol>
+    <symbol id="i-support" viewBox="0 0 24 24"><path d="M4 5h16v12H8l-4 4z"/><path d="M8 9h8m-8 4h5"/></symbol>
   </defs></svg>
   <main id="login" class="login-layout">
     <section class="login-brand" aria-label="دیوان">
@@ -47,6 +49,8 @@
         <a href="#posts"><svg><use href="#i-book"/></svg><span>نوشته‌ها</span></a>
         <a href="#categories"><svg><use href="#i-grid"/></svg><span>دسته‌بندی‌ها</span></a>
         <a href="#pages"><svg><use href="#i-book"/></svg><span>صفحه‌های دیوان</span></a>
+        <a href="#media"><svg><use href="#i-media"/></svg><span>کتابخانهٔ رسانه</span></a>
+        <a href="#support"><svg><use href="#i-support"/></svg><span>پشتیبانی</span></a>
         <a href="#account"><svg><use href="#i-user"/></svg><span>حساب مدیر</span></a>
       </nav>
       <div class="sidebar-foot"><span class="avatar"><svg><use href="#i-user"/></svg></span><div><strong id="identity"></strong><small>مدیر دیوان</small></div><button id="logout" type="button" aria-label="خروج از حساب" title="خروج"><svg><use href="#i-logout"/></svg></button></div>

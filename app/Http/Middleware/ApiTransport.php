@@ -16,7 +16,8 @@ class ApiTransport
         if ($request->query('action') && config('divan.require_https') && ! $request->secure()) {
             throw new ApiError(426, 'https_required', 'ورود و مدیریت فقط با اتصال HTTPS انجام می‌شود.');
         }
-        if ((int) $request->header('Content-Length', 0) > 6000000) {
+        $maxRequest = $request->query('action') === 'media_upload' ? 60000000 : 6000000;
+        if ((int) $request->header('Content-Length', 0) > $maxRequest) {
             throw new ApiError(413, 'request_too_large', 'حجم درخواست بیش از حد مجاز است.');
         }
         $response = $next($request);

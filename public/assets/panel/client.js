@@ -51,6 +51,32 @@ export class TokenApi {
     }
     return data;
   }
+  upload(action, {fields, onProgress = () => {}}) {
+    const url = new URL(this.endpoint); url.searchParams.set('action', action);
+    const currentToken = this.token;
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', url);
+      xhr.setRequestHeader('Accept', 'application/json');
+      if (currentToken) xhr.setRequestHeader('Authorization', `Bearer ${currentToken}`);
+      xhr.upload.onprogress = event => onProgress(event.lengthComputable ? Math.min(100, Math.round(event.loaded * 100 / event.total)) : null);
+      xhr.onerror = () => reject(new ApiError('نتیجهٔ بارگذاری مشخص نیست؛ ابتدا کتابخانه را تازه کنید.', 0, true));
+      xhr.onabort = () => reject(new ApiError('بارگذاری لغو شد؛ کتابخانه را برای بررسی نتیجه تازه کنید.', 0, true));
+      xhr.onload = () => {
+        let data;
+        try { data = JSON.parse(xhr.responseText); } catch { reject(new ApiError('پاسخ معتبر از سرور دریافت نشد.', xhr.status, xhr.status >= 500)); return; }
+        if (xhr.status === 401) {
+          if (this.token !== currentToken) { reject(new ApiError('پاسخ مربوط به ورود قبلی است.', 409)); return; }
+          this.setToken(''); reject(new ApiError('ورود منقضی شده است؛ دوباره وارد شوید.', 401)); return;
+        }
+        if (xhr.status < 200 || xhr.status >= 300 || data?.ok !== true) {
+          reject(new ApiError(data?.message || 'بارگذاری انجام نشد.', xhr.status, xhr.status >= 500)); return;
+        }
+        onProgress(100); resolve(data);
+      };
+      xhr.send(fields);
+    });
+  }
   async login(username, password) {
     this.setToken('');
     const data = await this.call('login', {method: 'POST', fields: {username, password}, authenticated: false});

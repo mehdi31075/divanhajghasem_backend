@@ -113,10 +113,10 @@ class DivanApi
 
             return $rows ? ['AndroidEbookApp' => $rows] : [];
         }
-        if (! in_array($action, ['login', 'me', 'logout', 'create', 'update', 'delete', 'stats', 'posts', 'pages', 'page_update', 'account', 'account_update', 'category_create', 'category_update', 'category_delete', 'media_list', 'media_upload'], true)) {
+        if (! in_array($action, ['login', 'me', 'logout', 'create', 'update', 'delete', 'stats', 'posts', 'pages', 'page_update', 'account', 'account_update', 'category_create', 'category_update', 'category_delete', 'media_list', 'media_upload', 'media_update', 'media_delete', 'support_create', 'support_check', 'support_list', 'support_reply'], true)) {
             throw new ApiError(404, 'unknown_action', 'این عملیات وجود ندارد.');
         }
-        $requiredMethod = in_array($action, ['me', 'stats', 'posts', 'pages', 'account', 'media_list'], true) ? 'GET' : 'POST';
+        $requiredMethod = in_array($action, ['me', 'stats', 'posts', 'pages', 'account', 'media_list', 'support_list'], true) ? 'GET' : 'POST';
         if ($method !== $requiredMethod) {
             throw new ApiError(405, 'method_not_allowed', 'روش درخواست معتبر نیست.');
         }
@@ -137,13 +137,41 @@ class DivanApi
 
             return ['ok' => true, 'access_token' => $token, 'token_type' => 'Bearer', 'expires_in' => $this->ttl, 'username' => $user['Username']];
         }
+        if ($action === 'support_create') {
+            $message = $input['message'] ?? null;
+            if (! is_string($message) || trim($message) === '' || mb_strlen($message) > 3000 || ! preg_match('//u', $message)) {
+                throw new ApiError(422, 'invalid_support_message', 'پیام باید بین ۱ تا ۳۰۰۰ نویسه باشد.');
+            }
+            $ipHash = hash('sha256', $ip);
+            if ($this->store->supportCountFromIp($ipHash, $now - 3600) >= 5) {
+                throw new ApiError(429, 'support_rate_limited', 'تعداد پیام‌ها زیاد است؛ یک ساعت دیگر دوباره تلاش کنید.');
+            }
+            $receipt = substr($this->randomToken(), 0, 32);
+            $this->store->createSupportMessage(hash('sha256', $receipt), $ipHash, trim($message), $now);
+
+            return ['ok' => true, 'receipt' => $receipt, 'created_at' => gmdate('Y-m-d\\TH:i:s\\Z', $now)];
+        }
+        if ($action === 'support_check') {
+            $receipt = $input['receipt'] ?? null;
+            if (! is_string($receipt) || ! preg_match('/^[a-f0-9]{32}$/', $receipt)) {
+                throw new ApiError(422, 'invalid_support_receipt', 'کد پیگیری معتبر نیست.');
+            }
+            $message = $this->store->supportMessage(hash('sha256', $receipt));
+            if (! $message) {
+                throw new ApiError(404, 'support_message_not_found', 'پیامی با این کد پیگیری پیدا نشد.');
+            }
+
+            return ['ok' => true, 'ticket' => $this->formatSupportMessage($message)];
+        }
         $username = $this->principal($bearer, $now);
         if ($action === 'media_list') {
             if (! $this->media) {
                 throw new ApiError(503, 'media_unavailable', 'کتابخانهٔ رسانه در دسترس نیست.');
             }
 
-            return ['ok' => true, 'videos' => $this->media->videos()];
+            $items = $this->media->all();
+
+            return ['ok' => true, 'media' => $items, 'videos' => array_values(array_filter($items, static fn ($item) => $item['type'] === 'video'))];
         }
         if ($action === 'media_upload') {
             if (! $this->media) {
@@ -155,6 +183,32 @@ class DivanApi
             }
 
             return ['ok' => true, 'media' => $this->media->upload($files['media_file'] ?? null, $type, $now)];
+        }
+        if ($action === 'media_update') {
+            if (! $this->media) throw new ApiError(503, 'media_unavailable', 'کتابخانهٔ رسانه در دسترس نیست.');
+            return ['ok' => true, 'media' => $this->media->rename($input['id'] ?? null, $input['name'] ?? null)];
+        }
+        if ($action === 'media_delete') {
+            if (! $this->media) throw new ApiError(503, 'media_unavailable', 'کتابخانهٔ رسانه در دسترس نیست.');
+            $this->media->delete($input['id'] ?? null);
+
+            return ['ok' => true];
+        }
+        if ($action === 'support_list') {
+            return ['ok' => true, 'messages' => array_map([$this, 'formatSupportMessage'], $this->store->supportMessages())];
+        }
+        if ($action === 'support_reply') {
+            $id = $this->id($input['id'] ?? null);
+            $reply = $input['reply'] ?? null;
+            if (! is_string($reply) || mb_strlen($reply) > 4000 || ! preg_match('//u', $reply)) {
+                throw new ApiError(422, 'invalid_support_reply', 'پاسخ باید حداکثر ۴۰۰۰ نویسه باشد.');
+            }
+            $reply = trim($reply);
+            if (! $this->store->replyToSupport($id, $reply === '' ? null : $reply, $reply === '' ? null : $now) && ! $this->store->supportExists($id)) {
+                throw new ApiError(404, 'support_message_not_found', 'پیام پشتیبانی پیدا نشد.');
+            }
+
+            return ['ok' => true];
         }
         if ($action === 'pages') {
             return ['ok' => true, 'pages' => $this->store->pages()];
@@ -309,5 +363,14 @@ class DivanApi
         }
 
         return ['ok' => true, 'nid' => $id];
+    }
+
+    private function formatSupportMessage($row)
+    {
+        $row['id'] = (string) $row['id'];
+        $row['created_at'] = gmdate('Y-m-d\\TH:i:s\\Z', (int) $row['created_at']);
+        $row['replied_at'] = $row['replied_at'] === null ? null : gmdate('Y-m-d\\TH:i:s\\Z', (int) $row['replied_at']);
+
+        return $row;
     }
 }

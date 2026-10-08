@@ -51,22 +51,27 @@ function insertVideo(editor, url) {
   editor.model.insertContent(model, editor.model.document.selection);
   editor.editing.view.focus();
 }
-function videoLibrary(form, editor) {
+function mediaLibrary(editor = null) {
   const dialog = document.createElement('dialog');
   dialog.className = 'media-dialog'; dialog.setAttribute('dir', 'rtl');
-  dialog.innerHTML = `<form method="dialog"><div class="media-dialog-head"><h2>کتابخانهٔ ویدیو</h2><button type="submit" aria-label="بستن">بستن</button></div></form><label>بارگذاری ویدیوی تازه<input id="media-video-file" type="file" accept="video/mp4,video/webm,.mp4,.webm"></label><p class="help">MP4 یا WebM، حداکثر ۵۰ مگابایت. ویدیو ابتدا در هاست ذخیره می‌شود و بعد می‌توانید آن را در متن قرار دهید.</p><p class="media-message" role="status" aria-live="polite"></p><div class="media-list"></div>`;
-  form.append(dialog);
+  const videoOnly = Boolean(editor);
+  dialog.innerHTML = `<form method="dialog"><div class="media-dialog-head"><h2>${videoOnly ? 'کتابخانهٔ ویدیو' : 'کتابخانهٔ رسانه'}</h2><button type="submit" aria-label="بستن">بستن</button></div></form><label>بارگذاری ${videoOnly ? 'ویدیوی تازه' : 'فایل تازه'}<input id="media-file" type="file" accept="${videoOnly ? 'video/mp4,video/webm,.mp4,.webm' : 'image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm'}"></label><p class="help">تصاویر تا ۱۰ مگابایت و MP4/WebM تا ۵۰ مگابایت. تغییر نام، آدرس فایل‌های درج‌شده در نوشته‌ها را عوض نمی‌کند. حذف فایل ممکن است رسانهٔ درج‌شده در نوشته را از دسترس خارج کند.</p><div class="media-progress" hidden><progress max="100" value="0"></progress><span>۰٪</span></div><p class="media-message" role="status" aria-live="polite"></p><div class="media-list"></div>`;
+  document.body.append(dialog);
   const message = dialog.querySelector('.media-message'); const list = dialog.querySelector('.media-list');
+  const progress = dialog.querySelector('.media-progress'); const progressBar = progress.querySelector('progress'); const progressText = progress.querySelector('span');
   dialog.addEventListener('close', () => dialog.remove(), {once: true});
-  const render = videos => {
-    list.innerHTML = videos.map(item => {
+  const render = entries => {
+    const items = videoOnly ? entries.filter(item => item.type === 'video') : entries;
+    list.innerHTML = items.map(item => {
       let src; try { src = sameSiteMediaUrl(item.url); } catch { return ''; }
-      return `<article class="media-item"><video controls preload="metadata" src="${e(src)}"></video><div><strong>${e(item.name)}</strong><small>${e(item.created_at || '')}</small><button type="button" class="primary compact" data-insert-video="${e(src)}">قرار دادن در متن</button></div></article>`;
-    }).join('') || '<p class="empty">هنوز ویدیویی بارگذاری نشده است.</p>';
+      const id = decodeURIComponent(new URL(src).pathname.split('/').pop());
+      const preview = item.type === 'video' ? `<video controls preload="metadata" src="${e(src)}"></video>` : `<img src="${e(src)}" alt="${e(item.name)}" loading="lazy">`;
+      return `<article class="media-item" data-media-row="${e(id)}">${preview}<div><strong>${e(item.name)}</strong><small>${item.type === 'video' ? 'ویدیو' : 'تصویر'} · ${e(item.created_at || '')} · ${digits(Math.ceil((item.size_bytes || 0) / 1024))} کیلوبایت</small><div class="media-actions">${videoOnly ? `<button type="button" class="primary compact" data-insert-video="${e(src)}">درج در متن</button>` : ''}<button type="button" data-rename-media="${e(id)}">ویرایش نام</button><button type="button" class="danger" data-delete-media="${e(id)}">حذف فایل</button></div></div></article>`;
+    }).join('') || `<p class="empty">هنوز ${videoOnly ? 'ویدیویی' : 'رسانه‌ای'} بارگذاری نشده است.</p>`;
   };
   const refresh = async () => {
-    message.textContent = 'در حال دریافت ویدیوهای هاست…';
-    try { const result = await api.call('media_list'); render(result.videos || []); message.textContent = ''; }
+    message.textContent = 'در حال دریافت فایل‌های هاست…';
+    try { const result = await api.call('media_list'); render(result.media || result.videos || []); message.textContent = ''; }
     catch (error) { message.textContent = error.message; }
   };
   list.addEventListener('click', event => {
@@ -74,18 +79,37 @@ function videoLibrary(form, editor) {
     try { insertVideo(editor, button.dataset.insertVideo); markDirty(); dialog.close(); }
     catch (error) { message.textContent = error.message; }
   });
-  dialog.querySelector('#media-video-file').addEventListener('change', async event => {
+  list.addEventListener('click', async event => {
+    const rename = event.target.closest('[data-rename-media]');
+    if (rename) {
+      const row = rename.closest('[data-media-row]'); const current = row.querySelector('strong').textContent;
+      const name = window.prompt('نام نمایشی رسانه', current); if (name === null || !name.trim()) return;
+      rename.disabled = true;
+      try { await api.call('media_update', {method: 'POST', fields: {id: rename.dataset.renameMedia, name: name.trim()}}); await refresh(); }
+      catch (error) { message.textContent = error.uncertain ? 'نتیجهٔ تغییر نام مشخص نیست؛ فهرست را بررسی می‌کنم.' : error.message; await refresh(); }
+      finally { rename.disabled = false; }
+      return;
+    }
+    const remove = event.target.closest('[data-delete-media]');
+    if (remove) {
+      if (!window.confirm('این فایل برای همیشه از هاست حذف شود؟ اگر در نوشته‌ای استفاده شده باشد، دیگر نمایش داده نمی‌شود.')) return;
+      remove.disabled = true;
+      try { await api.call('media_delete', {method: 'POST', fields: {id: remove.dataset.deleteMedia}}); message.textContent = 'فایل حذف شد.'; await refresh(); }
+      catch (error) { message.textContent = error.uncertain ? 'نتیجهٔ حذف مشخص نیست؛ فهرست را بررسی می‌کنم.' : error.message; await refresh(); remove.disabled = false; }
+    }
+  });
+  dialog.querySelector('#media-file').addEventListener('change', async event => {
     const file = event.target.files?.[0]; if (!file) return;
-    const input = event.target; input.disabled = true; message.textContent = 'در حال بارگذاری ویدیو…';
+    const input = event.target; input.disabled = true; message.textContent = `در حال بارگذاری ${file.type.startsWith('video/') ? 'ویدیو' : 'تصویر'}…`; progress.hidden = false; progressBar.value = 0; progressText.textContent = '۰٪';
     try {
-      const fields = new FormData(); fields.append('media_type', 'video'); fields.append('media_file', file);
-      await api.call('media_upload', {method: 'POST', fields});
-      message.textContent = 'ویدیو در هاست ذخیره شد؛ آن را از فهرست انتخاب کنید.';
+      const fields = new FormData(); fields.append('media_type', file.type.startsWith('video/') ? 'video' : 'image'); fields.append('media_file', file);
+      await api.upload('media_upload', {fields, onProgress: value => { if (value !== null) { progressBar.value = value; progressText.textContent = `${digits(value)}٪`; } }});
+      message.textContent = 'فایل در هاست ذخیره شد.';
       await refresh();
     } catch (error) {
       message.textContent = error.uncertain ? 'نتیجهٔ بارگذاری قطعی نیست؛ فهرست را بررسی کنید و فایل را دوباره نفرستید.' : error.message;
       if (error.uncertain) await refresh();
-    } finally { input.disabled = false; input.value = ''; }
+    } finally { input.disabled = false; input.value = ''; setTimeout(() => { progress.hidden = true; }, 1200); }
   });
   dialog.showModal(); void refresh();
   return () => dialog.remove();
@@ -93,7 +117,7 @@ function videoLibrary(form, editor) {
 const toolbarIconPaths = {
   undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h9a6 6 0 0 1 0 12h-2"/>',
   redo: '<path d="m15 14 5-5-5-5"/><path d="M20 9h-9a6 6 0 0 0 0 12h2"/>',
-  link: '<path d="M10 13.5 14 9.5"/><path d="M8.5 15 6 17.5a4 4 0 0 1-5.5-5.8l4-4a4 4 0 0 1 5.7 0"/><path d="m15.5 9 2.5-2.5a4 4 0 0 1 5.5 5.8l-4 4a4 4 0 0 1-5.7 0"/>',
+  link: '<path d="M10 13.5 14 10.5"/><path d="M8.5 15.5 7 17a4 4 0 0 1-5.7-5.7l4.2-4.2a4 4 0 0 1 5.7 0"/><path d="m15.5 8.5 1.5-1.5a4 4 0 0 1 5.7 5.7l-4.2 4.2a4 4 0 0 1-5.7 0"/>',
   image: '<rect x="3" y="3.5" width="18" height="17" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m4 17 5-5 3.5 3 2.5-2.5L20 17"/>',
   imageUrl: '<rect x="3" y="3.5" width="18" height="17" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m4 17 5-5 3.5 3 2.5-2.5L20 17"/><path d="M17 2v5m-2.5-2.5h5"/>',
   table: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18m6-18v18"/>',
@@ -119,6 +143,7 @@ const toolbarIconPaths = {
   background: '<path d="M4 16 14 6l4 4L8 20H4v-4Z"/><path d="m12 8 4 4M3 22h18"/>'
 };
 function replaceToolbarIcons(editor) {
+  const labels = {undo:'واگرد',redo:'دوباره',link:'پیوند',image:'بارگذاری تصویر',imageUrl:'تصویر از نشانی',table:'جدول',rule:'خط جداکننده',special:'نویسه ویژه',source:'کد HTML',fullscreen:'تمام‌صفحه',heading:'سبک متن',font:'قلم',size:'اندازه',bold:'درشت',italic:'کج',underline:'زیرخط',strike:'خط‌خورده',clear:'پاک‌کردن قالب',bullets:'فهرست',numbers:'فهرست عددی',outdent:'کاهش تورفتگی',indent:'افزایش تورفتگی',quote:'نقل‌قول',align:'چینش',color:'رنگ متن',background:'رنگ زمینه'};
   const toolbar = editor.ui.view.toolbar.element;
   for (const button of toolbar.querySelectorAll('button')) {
     const label = [button.getAttribute('aria-label'), button.getAttribute('title'),
@@ -154,6 +179,10 @@ function replaceToolbarIcons(editor) {
     if (!key) continue;
     const icon = button.querySelector('svg.ck-icon');
     if (icon) icon.outerHTML = `<svg class="ck ck-icon divan-toolbar-icon" data-divan-icon="${key}" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${toolbarIconPaths[key]}</svg>`;
+    button.classList.add('ck-button_with-text', 'divan-toolbar-control');
+    let text = button.querySelector('.ck-button__label');
+    if (!text) { text = document.createElement('span'); text.className = 'ck-button__label'; button.append(text); }
+    text.textContent = labels[key];
   }
 }
 class ImageUploadAdapter {
@@ -208,11 +237,11 @@ async function mountEditor(form, body, label = 'متن مطلب') {
       const toolbar = editor.ui.view.toolbar.element.querySelector('.ck-toolbar__items');
       const videoButton = document.createElement('button');
       videoButton.type = 'button';
-      videoButton.className = 'ck ck-button ck-button_with-text divan-video-button';
+  videoButton.className = 'ck ck-button ck-button_with-text divan-toolbar-control divan-video-button';
       videoButton.setAttribute('aria-label', 'بارگذاری و درج ویدیو از هاست');
       videoButton.title = 'بارگذاری یا انتخاب ویدیو از هاست';
-      videoButton.innerHTML = '<svg aria-hidden="true" viewBox="0 0 20 20"><path d="M3 4.5h9.5v11H3zM12.5 8l4.5-2.5v9L12.5 12z"/></svg><span class="ck-button__label">ویدیو</span>';
-      videoButton.addEventListener('click', () => videoLibrary(form, editor));
+  videoButton.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="13" height="14" rx="2"/><path d="m16 10 5-3v10l-5-3z"/></svg><span class="ck-button__label">ویدیو</span>';
+  videoButton.addEventListener('click', () => mediaLibrary(editor));
       if (toolbar) {
         const imageButton = [...toolbar.querySelectorAll('button')].find(button => /image/i.test(button.getAttribute('aria-label') || ''));
         if (imageButton) imageButton.after(videoButton);
@@ -312,6 +341,23 @@ async function render(route) {
     const data = await api.call('posts', {query});
     html = `<div class="actions"><h1>نوشته‌ها</h1>${button('مطلب جدید', 'post-new')}</div><form id="search" class="filters"><input name="q" value="${e(q)}" placeholder="جستجو در نوشته‌ها" aria-label="جستجو"><select name="category_id" aria-label="دسته">${categoryOptions(cat, true)}</select><button>جستجو</button></form><section class="card table-wrap"><table><thead><tr><th>عنوان</th><th>دسته</th><th>تاریخ‌ها</th><th>عملیات</th></tr></thead><tbody>${data.posts.map(p => `<tr><td><strong>${e(p.news_heading)}</strong><br><small>${e(p.news_date)}</small></td><td><span class="category-badge">${e(state.categories.find(c => String(c.cid) === String(p.cat_id))?.category_name || p.cat_id)}</span></td><td><small>ایجاد: ${e(displayDate(p.created_at))}<br>ویرایش: ${e(displayDate(p.updated_at))}</small></td><td><div class="actions">${button('مطالعه', `read/${p.nid}`)}${button('ویرایش', `post/${p.nid}`)}<button class="danger" data-delete="post" data-id="${e(p.nid)}" data-label="${e(p.news_heading)}">حذف</button></div></td></tr>`).join('')}</tbody></table>${data.posts.length ? '' : '<p class="empty">نوشته‌ای پیدا نشد.</p>'}<div class="pagination">${page > 1 ? button('صفحه قبل', `posts/${new URLSearchParams({...query, page: page - 1})}`) : ''}<span>${digits(page)} · ${digits(data.total)} نوشته</span>${page * 50 < data.total ? button('صفحه بعد', `posts/${new URLSearchParams({...query, page: page + 1})}`) : ''}</div></section>`;
     after = () => $('#search').addEventListener('submit', event => { event.preventDefault(); navigate(`posts/${new URLSearchParams(new FormData(event.target))}`); });
+  } else if (view === 'media') {
+    const result = await api.call('media_list');
+    const items = result.media || result.videos || [];
+    html = `<div class="actions"><h1>کتابخانهٔ رسانه</h1><button type="button" class="primary" id="open-media-library">بارگذاری و مدیریت فایل‌ها</button></div><p class="help">${digits(items.length)} فایل روی هاست؛ نام نمایشی را ویرایش کنید یا فایل را حذف کنید.</p><section class="grid media-library-grid">${items.map(item => {let src;try{src=sameSiteMediaUrl(item.url)}catch{return ''}return `<article class="card media-library-card">${item.type==='video'?`<video controls preload="metadata" src="${e(src)}"></video>`:`<img src="${e(src)}" alt="${e(item.name)}" loading="lazy">`}<strong>${e(item.name)}</strong><small>${item.type==='video'?'ویدیو':'تصویر'} · ${e(displayDate(item.created_at))}</small></article>`}).join('') || '<p class="empty">هنوز رسانه‌ای بارگذاری نشده است.</p>'}</section>`;
+    after = () => { $('#open-media-library').onclick = () => mediaLibrary(); };
+  } else if (view === 'support') {
+    const result = await api.call('support_list');
+    html = `<div class="actions"><h1>پیام‌های پشتیبانی</h1><span class="category-badge">${digits(result.messages.length)} پیام اخیر</span></div><section class="support-list">${result.messages.map(item => `<article class="card support-card"><div class="support-meta"><strong>پیام ${digits(item.id)}</strong><small>${e(displayDate(item.created_at))}</small></div><p class="support-message">${e(item.message)}</p><form class="support-reply-form" data-support-reply="${e(item.id)}"><label>پاسخ شما<textarea name="reply" maxlength="4000" rows="3" placeholder="پاسخ متنی برای کاربر">${e(item.reply || '')}</textarea></label><div class="support-meta"><small>${item.replied_at ? `پاسخ آخر: ${e(displayDate(item.replied_at))}` : 'هنوز پاسخی ثبت نشده'}</small><button class="primary compact" type="submit">ذخیرهٔ پاسخ</button></div><p class="form-message" role="alert"></p></form></article>`).join('') || '<section class="card empty">هنوز پیامی دریافت نشده است.</section>'}</section>`;
+    after = () => {
+      $('#content').addEventListener('input', event => { if (event.target.closest('[data-support-reply]')) state.dirty = true; });
+      $('#content').addEventListener('submit', async event => {
+        const form = event.target.closest('[data-support-reply]'); if (!form) return;
+        event.preventDefault(); const submit = form.querySelector('button[type=submit]'); submit.disabled = true;
+        try { await api.call('support_reply', {method: 'POST', fields: {id: form.dataset.supportReply, reply: form.elements.reply.value}}); state.dirty = false; await render('support'); notice('پاسخ در اپ برای فرستنده ثبت شد.'); }
+        catch (error) { if (error.status === 401) lock(error.message); formMessage(form, error.message); submit.disabled = false; }
+      });
+    };
   } else if (view === 'read') {
     const article = (await api.call('', {query: {nid: id}}))[0];
     if (!article) throw new ApiError('مطلب دیگر موجود نیست.');
