@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Exceptions\ApiError;
 use App\Models\User;
 use App\Services\CategoryImages;
+use App\Services\ContentMedia;
 use App\Services\DivanApi;
 use App\Services\DivanRepository;
 use Illuminate\Support\Facades\Auth;
@@ -25,7 +26,7 @@ class AppServiceProvider extends ServiceProvider
         ));
         $this->app->bind(DivanApi::class, fn ($app) => new DivanApi(
             $app->make(DivanRepository::class), config('divan.token_ttl'),
-            $app->make(CategoryImages::class),
+            $app->make(CategoryImages::class), $app->make(ContentMedia::class),
         ));
     }
 

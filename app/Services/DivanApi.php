@@ -13,10 +13,13 @@ class DivanApi
 
     private $images;
 
-    public function __construct($store, $ttl = 86400, $images = null)
+    private $media;
+
+    public function __construct($store, $ttl = 86400, $images = null, $media = null)
     {
         $this->store = $store;
         $this->images = $images;
+        $this->media = $media;
         $this->ttl = max(60, min((int) $ttl, 604800));
     }
 
@@ -110,10 +113,10 @@ class DivanApi
 
             return $rows ? ['AndroidEbookApp' => $rows] : [];
         }
-        if (! in_array($action, ['login', 'me', 'logout', 'create', 'update', 'delete', 'stats', 'posts', 'pages', 'page_update', 'account', 'account_update', 'category_create', 'category_update', 'category_delete'], true)) {
+        if (! in_array($action, ['login', 'me', 'logout', 'create', 'update', 'delete', 'stats', 'posts', 'pages', 'page_update', 'account', 'account_update', 'category_create', 'category_update', 'category_delete', 'media_list', 'media_upload'], true)) {
             throw new ApiError(404, 'unknown_action', 'این عملیات وجود ندارد.');
         }
-        $requiredMethod = in_array($action, ['me', 'stats', 'posts', 'pages', 'account'], true) ? 'GET' : 'POST';
+        $requiredMethod = in_array($action, ['me', 'stats', 'posts', 'pages', 'account', 'media_list'], true) ? 'GET' : 'POST';
         if ($method !== $requiredMethod) {
             throw new ApiError(405, 'method_not_allowed', 'روش درخواست معتبر نیست.');
         }
@@ -135,6 +138,24 @@ class DivanApi
             return ['ok' => true, 'access_token' => $token, 'token_type' => 'Bearer', 'expires_in' => $this->ttl, 'username' => $user['Username']];
         }
         $username = $this->principal($bearer, $now);
+        if ($action === 'media_list') {
+            if (! $this->media) {
+                throw new ApiError(503, 'media_unavailable', 'کتابخانهٔ رسانه در دسترس نیست.');
+            }
+
+            return ['ok' => true, 'videos' => $this->media->videos()];
+        }
+        if ($action === 'media_upload') {
+            if (! $this->media) {
+                throw new ApiError(503, 'media_unavailable', 'بارگذاری رسانه در دسترس نیست.');
+            }
+            $type = $input['media_type'] ?? null;
+            if (! is_string($type)) {
+                throw new ApiError(422, 'invalid_media_type', 'نوع فایل پشتیبانی نمی‌شود.');
+            }
+
+            return ['ok' => true, 'media' => $this->media->upload($files['media_file'] ?? null, $type, $now)];
+        }
         if ($action === 'pages') {
             return ['ok' => true, 'pages' => $this->store->pages()];
         }
@@ -282,9 +303,9 @@ class DivanApi
             if (! $this->store->article($id)) {
                 throw new ApiError(404, 'article_not_found', 'مطلب روی سرور وجود ندارد.');
             }
-            $this->store->updateArticle($id, $input);
+            $this->store->updateArticle($id, $input, $now);
         } else {
-            $id = $this->store->createArticle($input);
+            $id = $this->store->createArticle($input, $now);
         }
 
         return ['ok' => true, 'nid' => $id];

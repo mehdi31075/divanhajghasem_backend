@@ -8,7 +8,7 @@ Artisan::command('divan:check', function () {
     $expected = [
         'tbl_user' => ['ID', 'Username', 'Password', 'Email'],
         'tbl_news_category' => ['cid', 'category_name', 'category_image', 'author', 'status'],
-        'tbl_news' => ['nid', 'news_heading', 'cat_id', 'news_status', 'news_date', 'news_image', 'news_description'],
+        'tbl_news' => ['nid', 'news_heading', 'cat_id', 'news_status', 'news_date', 'news_image', 'news_description', 'created_at', 'updated_at'],
         'divan_api_tokens' => ['token_hash', 'username', 'password_digest', 'created_at', 'expires_at'],
         'divan_api_login_attempts' => ['ip_hash', 'attempted_at'],
     ];

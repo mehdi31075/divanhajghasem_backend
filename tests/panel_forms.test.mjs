@@ -12,7 +12,9 @@ const tick=()=>new Promise(resolve=>setTimeout(resolve,10));
 async function waitFor(fn){for(let i=0;i<100;i++){if(fn())return;await tick();}throw new Error('Timed out waiting for form state');}
 async function fixture({rich=false}={}){
  const dom=new JSDOM(html,{url:'https://fixture.test/index.php',runScripts:'outside-only'});
- const state={categories:[{cid:'61',category_name:'دسته اول',category_image:'one.png',author:'نویسنده',status:'1'}],pages:[{slug:"first-talk",title:"سخن اول",html_body:"<p>متن اولیه</p>",revision:1}],posts:[],mutations:0,expired:false,loseNextResponse:false};
+ dom.window.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
+ dom.window.HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEvent(new dom.window.Event('close'));};
+ const state={categories:[{cid:'61',category_name:'دسته اول',category_image:'one.png',author:'نویسنده',status:'1'}],pages:[{slug:"first-talk",title:"سخن اول",html_body:"<p>متن اولیه</p>",revision:1}],posts:[],videos:[],mutations:0,expired:false,loseNextResponse:false};
  dom.window.confirm=()=>true;dom.window.scrollTo=()=>{};
  dom.window.fetch=async(url,init)=>{
   assert.equal(init.credentials,'omit');const action=url.searchParams.get('action')||'';
@@ -27,6 +29,7 @@ async function fixture({rich=false}={}){
   if(action==='stats')return reply({ok:true,stats:{posts:state.posts.length,categories:state.categories.length}});
   if(action==='posts')return reply({ok:true,posts:[...state.posts].reverse(),total:state.posts.length,page:1});
   if(action==='pages')return reply({ok:true,pages:state.pages});
+  if(action==='media_list')return reply({ok:true,videos:state.videos});
   if(action==='page_update' && Number(fields.revision)!==state.pages.find(p=>p.slug===fields.slug).revision)return reply({ok:false,message:'صفحه روی سرور تغییر کرده است'},409);
   if(action==='account')return reply({ok:true,account:{Username:'fixture-admin',Email:'fixture@example.test'}});
   state.mutations++;
@@ -131,6 +134,17 @@ test('CKEditor source mode saves table formatting and keeps unsaved source throu
   f.submit('#post-form');await waitFor(()=>f.state.posts.length===1 && !f.doc.querySelector('#post-form'));
   const body=f.state.posts[0].news_description;
   assert.match(body,/<table/);assert.match(body,/خانه جدول/);assert.match(body,/color:red/);
+ }finally{f.dom.window.close();}
+});
+
+test('post editor inserts an uploaded host video from its media library',async()=>{
+ const f=await fixture({rich:true});try{
+  f.state.videos=[{name:'clip.mp4',url:'/upload/news-media/clip.mp4',mime_type:'video/mp4',created_at:'2026-10-08T10:00:00Z'}];
+  await f.login();await waitFor(()=>f.doc.querySelector('[data-route="post-new"]'));
+  f.click('[data-route="post-new"]');await waitFor(()=>f.doc.querySelector('.ck-editor__editable') && !f.doc.querySelector('#post-form button[type=submit]').disabled);
+  f.click('#insert-video');await waitFor(()=>f.doc.querySelector('[data-insert-video]'));
+  f.click('[data-insert-video]');await waitFor(()=>!f.doc.querySelector('.media-dialog'));
+  assert.match(f.state.richEditor.getData(),/<video[^>]*src="https:\/\/divanhajghasem\.ir\/upload\/news-media\/clip\.mp4"/);
  }finally{f.dom.window.close();}
 });
 

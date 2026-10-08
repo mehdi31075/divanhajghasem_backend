@@ -16,7 +16,7 @@ CKEditor 5 با ابزارهای پنل CKEditor قبلی روی سایت اصل
 
 ## آماده‌سازی
 
-1. هاست باید PHP 8.3 یا جدیدتر، Composer 2، PDO MySQL، mbstring، OpenSSL، fileinfo، XML، ctype، tokenizer و mod_rewrite یا تنظیمات معادل Nginx داشته باشد. GD برای تست تولید تصویر لازم است. `upload_max_filesize` حداقل 5M و `post_max_size` حداقل 6M تنظیم شود. MySQL/MariaDB فعلی قابل استفاده است؛ اتصال واقعی آن در این محیط آزموده نشده.
+1. هاست باید PHP 8.3 یا جدیدتر، Composer 2، PDO MySQL، mbstring، OpenSSL، fileinfo، XML، ctype، tokenizer و mod_rewrite یا تنظیمات معادل Nginx داشته باشد. GD برای تست تولید تصویر لازم است. `.user.ini` در `public/` محدودیت آپلود ویدیو را روی 52M و اندازهٔ کل درخواست را روی 60M می‌گذارد؛ اگر هاست این فایل را نادیده بگیرد، همین حدود را در DirectAdmin تنظیم کنید.
 2. از **کل دیتابیس، فایل‌های کد و تمام `upload/` زنده** backup قابل بازیابی بگیرید. تصاویر همراه مخزن فقط snapshot فایل پیوست‌اند؛ ممکن است سرور تصاویر جدیدتری داشته باشد.
 3. پروژه را ابتدا در یک مسیر خصوصی تازه خارج از document root آپلود/clone کنید. `.env` و `vendor` و `storage` نباید از وب قابل خواندن باشند. `.git` هم خصوصی بماند.
 4. فایل‌های واقعی زندهٔ `upload/` را به `public/upload/` کپی کنید و مسیر `/upload/category/...` را بدون تغییر حفظ کنید. تصویر موجود روی سرور را با snapshot قدیمی مخزن بازنویسی نکنید.
@@ -36,13 +36,13 @@ php artisan optimize
 
 `migrate` در دیتابیس موجود فقط جدول‌های مفقود و ثبت migrations را اضافه می‌کند؛ نام و دادهٔ جدول‌های اصلی تغییر نمی‌کنند. **migrate:fresh / migrate:refresh / db:wipe اجرا نکنید.** بک‌اند SQLite ندارد؛ dump خصوصی و `.env.testing` روی وب منتشر نشوند. فایل SQL ارسالی را دوباره روی دیتابیس موجود import نکنید. هیچ seed با رمز پیش‌فرض وجود ندارد.
 
-دسترسی نوشتن برای کاربر PHP فقط به `storage/`، `bootstrap/cache/` و `public/upload/category/` بدهید؛ از chmod 777 عمومی استفاده نکنید. جدول‌های MyISAM موجود به صورت خودکار به InnoDB تبدیل نمی‌شوند. dump ارسالی از MariaDB 10.6.24 است؛ ستون بدنهٔ نوشته `LONGTEXT` و جدول‌های اصلی `utf8mb3` هستند. اجرای تست‌های پاک‌کننده فقط روی دیتابیس مستقل با پسوند `_test` مجاز است؛ کاربر تست به دیتابیس اصلی دسترسی نداشته باشد.
+دسترسی نوشتن برای کاربر PHP فقط به `storage/`، `bootstrap/cache/`، `public/upload/category/` و `public/upload/news-media/` بدهید؛ از chmod 777 عمومی استفاده نکنید. جدول‌های MyISAM موجود به صورت خودکار به InnoDB تبدیل نمی‌شوند. dump ارسالی از MariaDB 10.6.24 است؛ ستون بدنهٔ نوشته `LONGTEXT` و جدول‌های اصلی `utf8mb3` هستند. اجرای تست‌های پاک‌کننده فقط روی دیتابیس مستقل با پسوند `_test` مجاز است؛ کاربر تست به دیتابیس اصلی دسترسی نداشته باشد.
 
 ## انتقال وب
 
 روش استاندارد تنظیم Document root به **`PROJECT/public`** است. تنظیم به ریشهٔ پروژه، `.env` و کد خصوصی را در معرض دسترسی می‌گذارد و صحیح نیست.
 
-برای DirectAdmin با ریشهٔ ثابت `public_html`، پروژهٔ خصوصی را در پوشهٔ هم‌سطح **`divan`** قرار دهید و محتویات `public/` (همراه `.htaccess`) را به `public_html` منتقل کنید. `index.php` جدید این دو چیدمان را تشخیص می‌دهد و `public_path` را تنظیم می‌کند. وقتی پوشهٔ `divan/public` منتقل شده باشد، bootstrap برای دستورات Artisan هم از `public_html` هم‌سطح استفاده می‌کند؛ بنابراین مسیر ذخیرهٔ تصاویر در وب و CLI یکسان است.
+برای DirectAdmin با ریشهٔ ثابت `public_html`، پروژهٔ خصوصی را در پوشهٔ هم‌سطح **`divan`** قرار دهید و محتویات `public/` (همراه `.htaccess` و `.user.ini`) را به `public_html` منتقل کنید. `index.php` جدید این دو چیدمان را تشخیص می‌دهد و `public_path` را تنظیم می‌کند. وقتی پوشهٔ `divan/public` منتقل شده باشد، bootstrap برای دستورات Artisan هم از `public_html` هم‌سطح استفاده می‌کند؛ بنابراین مسیر ذخیرهٔ تصاویر و ویدیوها در وب و CLI یکسان است.
 
 <div dir="ltr" align="left">
 
@@ -54,7 +54,7 @@ php artisan optimize
 
 </div>
 
-در ۲۰۲۶/۱۰/۰۷ این چیدمان روی هاست بررسی و اصلاح شد: مسیر اشتباه autoload/bootstrap خطای ۵۰۰ می‌داد؛ پس از اصلاح، صفحهٔ پنل باز شد. دو جدول مفقود احراز هویت (`divan_api_tokens` و `divan_api_login_attempts`) مطابق migration و با `CREATE TABLE IF NOT EXISTS` از phpMyAdmin اضافه شدند. جدول‌های اصلی و مطالب تغییر نکردند. اجرای کامل Artisan migration و ثبت جدول migrations هنوز انجام نشده؛ اجرای بعدی `migrate --force` جدول‌های موجود را دوباره نمی‌سازد.
+در ۲۰۲۶/۱۰/۰۷ این چیدمان روی هاست بررسی و اصلاح شد: مسیر اشتباه autoload/bootstrap خطای ۵۰۰ می‌داد؛ پس از اصلاح، صفحهٔ پنل باز شد. دو جدول مفقود احراز هویت (`divan_api_tokens` و `divan_api_login_attempts`) مطابق migration و با `CREATE TABLE IF NOT EXISTS` از phpMyAdmin اضافه شدند. در ۲۰۲۶/۱۰/۰۸ ستون‌های nullable تاریخ `created_at` و `updated_at` به `tbl_news` افزوده شدند؛ تاریخ‌های قدیمی نامعلوم ماندند. فایل migration در کد موجود است و با `hasColumn` می‌تواند بدون افزودن دوبارهٔ ستون‌ها ثبت شود. اجرای کامل Artisan migration و ثبت جدول migrations هنوز انجام نشده؛ اجرای بعدی `migrate --force` جدول‌های موجود را دوباره نمی‌سازد.
 
 Apache: فایل `public/.htaccess` همراه پروژه و mod_rewrite فعال باشد. فایل فیزیکی قدیمی `api.php` و `mobile-api.php` در document root باقی نماند؛ وگرنه مسیرهای Laravel را دور می‌زنند. `/api.php` یک URL لاراول است و باید به public/index.php rewrite شود. هدر Authorization نیز در .htaccess حفظ شده است.
 

@@ -11,6 +11,11 @@ function notice(message = '', error = false) { $('#notice').textContent = messag
 function formMessage(form, message, error = true) {
   const box = form.querySelector('.form-message'); box.textContent = message; box.className = `form-message ${error ? 'error' : 'success'}`;
 }
+function displayDate(value) {
+  if (!value) return 'ثبت نشده';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'ثبت نشده' : new Intl.DateTimeFormat('fa-IR', {dateStyle: 'medium', timeStyle: 'short'}).format(date);
+}
 function lock(message) {
   api.setToken(''); $('#panel').hidden = true; $('#login').hidden = false;
   $('#login-message').textContent = message; $('#login-message').className = 'error';
@@ -33,6 +38,72 @@ function editorHtml(original) {
     state.editor ? original : $('#body').value;
 }
 function markDirty() { state.dirty = true; }
+function sameSiteMediaUrl(value) {
+  const url = new URL(value, api.endpoint);
+  if (!['http:', 'https:'].includes(url.protocol) || url.origin !== api.endpoint.origin) throw new ApiError('آدرس فایل روی هاست دیوان معتبر نیست.');
+  return url.href;
+}
+function insertVideo(editor, url) {
+  const safe = sameSiteMediaUrl(url).replaceAll('&', '&amp;').replaceAll('"', '&quot;');
+  const html = `<figure class="media"><video controls playsinline preload="metadata" src="${safe}"></video></figure><p></p>`;
+  const view = editor.data.processor.toView(html);
+  const model = editor.data.toModel(view);
+  editor.model.insertContent(model, editor.model.document.selection);
+  editor.editing.view.focus();
+}
+function videoLibrary(form, editor) {
+  const dialog = document.createElement('dialog');
+  dialog.className = 'media-dialog'; dialog.setAttribute('dir', 'rtl');
+  dialog.innerHTML = `<form method="dialog"><div class="media-dialog-head"><h2>کتابخانهٔ ویدیو</h2><button type="submit" aria-label="بستن">بستن</button></div></form><label>بارگذاری ویدیوی تازه<input id="media-video-file" type="file" accept="video/mp4,video/webm,.mp4,.webm"></label><p class="help">MP4 یا WebM، حداکثر ۵۰ مگابایت. ویدیو ابتدا در هاست ذخیره می‌شود و بعد می‌توانید آن را در متن قرار دهید.</p><p class="media-message" role="status" aria-live="polite"></p><div class="media-list"></div>`;
+  form.append(dialog);
+  const message = dialog.querySelector('.media-message'); const list = dialog.querySelector('.media-list');
+  dialog.addEventListener('close', () => dialog.remove(), {once: true});
+  const render = videos => {
+    list.innerHTML = videos.map(item => {
+      let src; try { src = sameSiteMediaUrl(item.url); } catch { return ''; }
+      return `<article class="media-item"><video controls preload="metadata" src="${e(src)}"></video><div><strong>${e(item.name)}</strong><small>${e(item.created_at || '')}</small><button type="button" class="primary compact" data-insert-video="${e(src)}">قرار دادن در متن</button></div></article>`;
+    }).join('') || '<p class="empty">هنوز ویدیویی بارگذاری نشده است.</p>';
+  };
+  const refresh = async () => {
+    message.textContent = 'در حال دریافت ویدیوهای هاست…';
+    try { const result = await api.call('media_list'); render(result.videos || []); message.textContent = ''; }
+    catch (error) { message.textContent = error.message; }
+  };
+  list.addEventListener('click', event => {
+    const button = event.target.closest('[data-insert-video]'); if (!button) return;
+    try { insertVideo(editor, button.dataset.insertVideo); markDirty(); dialog.close(); }
+    catch (error) { message.textContent = error.message; }
+  });
+  dialog.querySelector('#media-video-file').addEventListener('change', async event => {
+    const file = event.target.files?.[0]; if (!file) return;
+    const input = event.target; input.disabled = true; message.textContent = 'در حال بارگذاری ویدیو…';
+    try {
+      const fields = new FormData(); fields.append('media_type', 'video'); fields.append('media_file', file);
+      await api.call('media_upload', {method: 'POST', fields});
+      message.textContent = 'ویدیو در هاست ذخیره شد؛ آن را از فهرست انتخاب کنید.';
+      await refresh();
+    } catch (error) {
+      message.textContent = error.uncertain ? 'نتیجهٔ بارگذاری قطعی نیست؛ فهرست را بررسی کنید و فایل را دوباره نفرستید.' : error.message;
+      if (error.uncertain) await refresh();
+    } finally { input.disabled = false; input.value = ''; }
+  });
+  dialog.showModal(); void refresh();
+  return () => dialog.remove();
+}
+class ImageUploadAdapter {
+  constructor(loader) { this.loader = loader; this.aborted = false; }
+  upload() {
+    return this.loader.file.then(file => {
+      if (this.aborted) throw new Error('بارگذاری لغو شد.');
+      const fields = new FormData(); fields.append('media_type', 'image'); fields.append('media_file', file);
+      return api.call('media_upload', {method: 'POST', fields}).then(result => {
+        if (this.aborted) throw new Error('بارگذاری لغو شد.');
+        return {default: sameSiteMediaUrl(result.media.url)};
+      });
+    });
+  }
+  abort() { this.aborted = true; }
+}
 async function mountEditor(form, body, label = 'متن مطلب') {
   if (window.CKEDITOR && window.DOMPurify) {
     const textarea = $('#body');
@@ -43,7 +114,7 @@ async function mountEditor(form, body, label = 'متن مطلب') {
     const plugins = ['Essentials','Paragraph','Heading','Bold','Italic','Underline','Strikethrough',
       'BlockQuote','Link','List','Indent','IndentBlock','Alignment','RemoveFormat','PasteFromOffice',
       'Table','TableToolbar','TableProperties','TableCellProperties','Image','ImageCaption',
-      'ImageStyle','ImageResize','ImageToolbar','ImageInsertViaUrl','HorizontalLine',
+      'ImageStyle','ImageResize','ImageToolbar','ImageUpload','ImageInsertViaUrl','HorizontalLine',
       'SpecialCharacters','SpecialCharactersEssentials','SourceEditing','GeneralHtmlSupport',
       'FontFamily','FontSize','FontColor','FontBackgroundColor','Fullscreen'];
     const submit = form.querySelector('button[type=submit]'); submit.disabled = true;
@@ -53,7 +124,7 @@ async function mountEditor(form, body, label = 'متن مطلب') {
         language: {ui: 'fa', content: 'fa'},
         initialData: window.DOMPurify.sanitize(body),
         placeholder: 'متن نوشته را اینجا بنویسید…',
-        toolbar: {items: ['undo','redo','|','link','insertImageViaUrl','insertTable','horizontalLine',
+        toolbar: {items: ['undo','redo','|','link','uploadImage','insertImageViaUrl','insertTable','horizontalLine',
           'specialCharacters','|','sourceEditing','fullscreen','-','heading','fontFamily','fontSize',
           '|','bold','italic','underline','strikethrough','removeFormat','|','bulletedList','numberedList',
           'outdent','indent','blockQuote','alignment','|','fontColor','fontBackgroundColor'], shouldNotGroupWhenFull: true},
@@ -63,9 +134,10 @@ async function mountEditor(form, body, label = 'متن مطلب') {
         fontSize: {options: [12,14,16,18,20,24,28,36],supportAllValues: true},
         table: {contentToolbar: ['tableColumn','tableRow','mergeTableCells','tableProperties','tableCellProperties']},
         image: {toolbar: ['imageTextAlternative','toggleImageCaption','imageStyle:inline','imageStyle:block','imageStyle:side','resizeImage']},
-        htmlSupport: {allow: [{name: /^(p|div|span|br|h[1-6]|pre|blockquote|ul|ol|li|a|img|figure|figcaption|table|thead|tbody|tfoot|tr|th|td|strong|b|em|i|u|s|sub|sup|hr)$/,styles: true,classes: true,attributes: true}]},
+        htmlSupport: {allow: [{name: /^(p|div|span|br|h[1-6]|pre|blockquote|ul|ol|li|a|img|figure|figcaption|video|source|table|thead|tbody|tfoot|tr|th|td|strong|b|em|i|u|s|sub|sup|hr)$/,styles: true,classes: true,attributes: true}]},
       });
       if (!form.isConnected) { await editor.destroy(); return; }
+      editor.plugins.get('FileRepository').createUploadAdapter = loader => new ImageUploadAdapter(loader);
       textarea.hidden = true;
       editor.editing.view.change(writer => writer.setAttribute('aria-label', label, editor.editing.view.document.getRoot()));
       let changed = false;
@@ -73,6 +145,7 @@ async function mountEditor(form, body, label = 'متن مطلب') {
       // Source mode holds edits outside the model until getData() synchronizes it.
       host.addEventListener('input', markDirty);
       state.editor = {
+        instance: editor,
         checkDirty: () => { editor.getData(); return changed; },
         getData: () => window.DOMPurify.sanitize(editor.getData()),
         setReadOnly: blocked => blocked ? editor.enableReadOnlyMode('saving') : editor.disableReadOnlyMode('saving'),
@@ -157,12 +230,12 @@ async function render(route) {
     const page = Number(search.get('page') || 1); const q = search.get('q') || ''; const cat = search.get('category_id') || '';
     const query = {page, q, ...(cat ? {category_id: cat} : {})};
     const data = await api.call('posts', {query});
-    html = `<div class="actions"><h1>نوشته‌ها</h1>${button('مطلب جدید', 'post-new')}</div><form id="search" class="filters"><input name="q" value="${e(q)}" placeholder="جستجو در نوشته‌ها" aria-label="جستجو"><select name="category_id" aria-label="دسته">${categoryOptions(cat, true)}</select><button>جستجو</button></form><section class="card table-wrap"><table><thead><tr><th>عنوان</th><th>دسته</th><th>عملیات</th></tr></thead><tbody>${data.posts.map(p => `<tr><td><strong>${e(p.news_heading)}</strong><br><small>${e(p.news_date)}</small></td><td><span class="category-badge">${e(state.categories.find(c => String(c.cid) === String(p.cat_id))?.category_name || p.cat_id)}</span></td><td><div class="actions">${button('مطالعه', `read/${p.nid}`)}${button('ویرایش', `post/${p.nid}`)}<button class="danger" data-delete="post" data-id="${e(p.nid)}" data-label="${e(p.news_heading)}">حذف</button></div></td></tr>`).join('')}</tbody></table>${data.posts.length ? '' : '<p class="empty">نوشته‌ای پیدا نشد.</p>'}<div class="pagination">${page > 1 ? button('صفحه قبل', `posts/${new URLSearchParams({...query, page: page - 1})}`) : ''}<span>${digits(page)} · ${digits(data.total)} نوشته</span>${page * 50 < data.total ? button('صفحه بعد', `posts/${new URLSearchParams({...query, page: page + 1})}`) : ''}</div></section>`;
+    html = `<div class="actions"><h1>نوشته‌ها</h1>${button('مطلب جدید', 'post-new')}</div><form id="search" class="filters"><input name="q" value="${e(q)}" placeholder="جستجو در نوشته‌ها" aria-label="جستجو"><select name="category_id" aria-label="دسته">${categoryOptions(cat, true)}</select><button>جستجو</button></form><section class="card table-wrap"><table><thead><tr><th>عنوان</th><th>دسته</th><th>تاریخ‌ها</th><th>عملیات</th></tr></thead><tbody>${data.posts.map(p => `<tr><td><strong>${e(p.news_heading)}</strong><br><small>${e(p.news_date)}</small></td><td><span class="category-badge">${e(state.categories.find(c => String(c.cid) === String(p.cat_id))?.category_name || p.cat_id)}</span></td><td><small>ایجاد: ${e(displayDate(p.created_at))}<br>ویرایش: ${e(displayDate(p.updated_at))}</small></td><td><div class="actions">${button('مطالعه', `read/${p.nid}`)}${button('ویرایش', `post/${p.nid}`)}<button class="danger" data-delete="post" data-id="${e(p.nid)}" data-label="${e(p.news_heading)}">حذف</button></div></td></tr>`).join('')}</tbody></table>${data.posts.length ? '' : '<p class="empty">نوشته‌ای پیدا نشد.</p>'}<div class="pagination">${page > 1 ? button('صفحه قبل', `posts/${new URLSearchParams({...query, page: page - 1})}`) : ''}<span>${digits(page)} · ${digits(data.total)} نوشته</span>${page * 50 < data.total ? button('صفحه بعد', `posts/${new URLSearchParams({...query, page: page + 1})}`) : ''}</div></section>`;
     after = () => $('#search').addEventListener('submit', event => { event.preventDefault(); navigate(`posts/${new URLSearchParams(new FormData(event.target))}`); });
   } else if (view === 'read') {
     const article = (await api.call('', {query: {nid: id}}))[0];
     if (!article) throw new ApiError('مطلب دیگر موجود نیست.');
-    html = `<div class="actions"><h1>${e(article.news_heading)}</h1>${button('ویرایش', `post/${id}`)}${button('بازگشت', 'posts')}</div><p>${e(article.news_date)}</p><iframe class="preview" sandbox="" referrerpolicy="no-referrer" title="متن مطلب"></iframe>`;
+    html = `<div class="actions"><h1>${e(article.news_heading)}</h1>${button('ویرایش', `post/${id}`)}${button('بازگشت', 'posts')}</div><p>${e(article.news_date)}</p><p class="article-dates">ایجاد: ${e(displayDate(article.created_at))}　·　آخرین ویرایش: ${e(displayDate(article.updated_at))}</p><iframe class="preview" sandbox="" referrerpolicy="no-referrer" title="متن مطلب"></iframe>`;
     after = () => preview($('.preview'), article.news_description);
   } else if (view === 'post' || view === 'post-new') {
     await categories();
@@ -170,11 +243,16 @@ async function render(route) {
     if (view === 'post' && !original) throw new ApiError('مطلب دیگر موجود نیست.');
     if (!state.categories.length) { html = `<section class="card"><h1>ابتدا دسته بسازید</h1>${button('دسته‌بندی‌ها', 'categories')}</section>`; }
     else {
-      html = `<div class="actions"><h1>${original ? 'ویرایش مطلب' : 'مطلب جدید'}</h1>${button('بازگشت', 'posts')}</div><form id="post-form" class="card form-card"><label>عنوان<input name="news_heading" maxlength="500" required value="${e(original?.news_heading)}"></label><label>عنوان فرعی<input name="news_date" maxlength="255" required value="${e(original?.news_date)}"></label><label>دسته<select name="cid">${categoryOptions(original?.cat_id)}</select></label><label>متن مطلب<textarea id="body" name="news_description">${e(original?.news_description)}</textarea></label><details><summary>پیش‌نمایش متن</summary><button id="refresh-preview" type="button">نمایش متن فعلی</button><iframe class="preview" sandbox="" referrerpolicy="no-referrer" title="پیش‌نمایش متن"></iframe></details><p class="form-message" role="alert"></p><button type="submit" class="primary">ذخیره روی سرور</button></form>`;
+      html = `<div class="actions"><h1>${original ? 'ویرایش مطلب' : 'مطلب جدید'}</h1>${button('بازگشت', 'posts')}</div>${original ? `<p class="article-dates">ایجاد: ${e(displayDate(original.created_at))}　·　آخرین ویرایش: ${e(displayDate(original.updated_at))}</p>` : ''}<form id="post-form" class="card form-card"><label>عنوان<input name="news_heading" maxlength="500" required value="${e(original?.news_heading)}"></label><label>عنوان فرعی<input name="news_date" maxlength="255" required value="${e(original?.news_date)}"></label><label>دسته<select name="cid">${categoryOptions(original?.cat_id)}</select></label><label>متن مطلب<textarea id="body" name="news_description">${e(original?.news_description)}</textarea></label><button id="insert-video" type="button" class="media-button">افزودن ویدیو از کتابخانهٔ هاست</button><p class="help">برای عکس، از دکمهٔ تصویر در نوار ویرایشگر استفاده کنید؛ فایل در هاست بارگذاری و همان‌جا در متن درج می‌شود.</p><details><summary>پیش‌نمایش متن</summary><button id="refresh-preview" type="button">نمایش متن فعلی</button><iframe class="preview" sandbox="" referrerpolicy="no-referrer" title="پیش‌نمایش متن"></iframe></details><p class="form-message" role="alert"></p><button type="submit" class="primary">ذخیره روی سرور</button></form>`;
       after = async () => {
         const form = $('#post-form');
         const body = original?.news_description || '';
         await mountEditor(form, body);
+        $('#insert-video').addEventListener('click', () => {
+          if (!state.editor) { formMessage(form, 'ویرایشگر در دسترس نیست.'); return; }
+          if (!state.editor.instance) { formMessage(form, 'ویرایشگر در دسترس نیست.'); return; }
+          videoLibrary(form, state.editor.instance);
+        });
         $('#refresh-preview').onclick = () => preview($('.preview'), editorHtml(body));
         const fields = () => ({...Object.fromEntries(new FormData(form)), news_description: editorHtml(body), ...(original ? {id: String(id)} : {})});
         bindForm(form, original ? 'update' : 'create', fields,

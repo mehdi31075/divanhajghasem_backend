@@ -124,9 +124,9 @@ class DivanRepository
         }
         $filter = $where ? ' WHERE '.implode(' AND ', $where) : '';
         $total = $this->query('SELECT COUNT(*) AS total FROM tbl_news'.$filter, $params);
-        $rows = $this->query('SELECT nid, news_heading, cat_id, news_date FROM tbl_news'.$filter.' ORDER BY nid DESC LIMIT 50 OFFSET '.(($page - 1) * 50), $params);
+        $rows = $this->query('SELECT nid, news_heading, cat_id, news_date, created_at, updated_at FROM tbl_news'.$filter.' ORDER BY nid DESC LIMIT 50 OFFSET '.(($page - 1) * 50), $params);
 
-        return ['posts' => $rows, 'total' => (int) $total[0]['total'], 'page' => $page];
+        return ['posts' => array_map([$this, 'formatArticleDates'], $rows), 'total' => (int) $total[0]['total'], 'page' => $page];
     }
 
     public function account($username)
@@ -162,24 +162,38 @@ class DivanRepository
     public function articles($query)
     {
         // Explicit legacy columns: future unrelated schema additions do not leak.
-        $sql = 'SELECT c.cid, c.category_name, c.category_image, c.author, c.status, n.nid, n.news_heading, n.cat_id, n.news_status, n.news_date, n.news_image, n.news_description FROM tbl_news_category c JOIN tbl_news n ON c.cid = n.cat_id';
+        // Keep the exact old Android JSON shape unless the Flutter reader opts in.
+        $includeDates = ($query['include_dates'] ?? null) === '1';
+        $dateColumns = $includeDates ? ', n.created_at, n.updated_at' : '';
+        $sql = 'SELECT c.cid, c.category_name, c.category_image, c.author, c.status, n.nid, n.news_heading, n.cat_id, n.news_status, n.news_date, n.news_image, n.news_description'.$dateColumns.' FROM tbl_news_category c JOIN tbl_news n ON c.cid = n.cat_id';
+        $format = $includeDates ? [$this, 'formatArticleDates'] : null;
+        $map = static fn ($rows) => $format ? array_map($format, $rows) : $rows;
         if (isset($query['cat_id'])) {
-            return $this->query($sql.' WHERE c.cid = ? ORDER BY n.nid ASC', [$query['cat_id']]);
+            return $map($this->query($sql.' WHERE c.cid = ? ORDER BY n.nid ASC', [$query['cat_id']]));
         }
         if (isset($query['nid'])) {
-            return $this->query($sql.' WHERE n.nid = ?', [$query['nid']]);
+            return $map($this->query($sql.' WHERE n.nid = ?', [$query['nid']]));
         }
         if (isset($query['latest_news'])) {
-            return $this->query($sql.' ORDER BY n.nid ASC LIMIT '.(int) $query['latest_news']);
+            return $map($this->query($sql.' ORDER BY n.nid ASC LIMIT '.(int) $query['latest_news']));
         }
 
         return $this->query('SELECT cid, category_name, category_image, author, status FROM tbl_news_category ORDER BY cid DESC');
     }
 
-    public function createArticle($input)
+    private function formatArticleDates($row)
+    {
+        foreach (['created_at', 'updated_at'] as $field) {
+            $row[$field] = $row[$field] === null ? null : gmdate('Y-m-d\\TH:i:s\\Z', (int) $row[$field]);
+        }
+
+        return $row;
+    }
+
+    public function createArticle($input, $now)
     {
         // INSERT...SELECT locks the category for this statement on MyISAM too.
-        $result = $this->query("INSERT INTO tbl_news (news_heading, cat_id, news_date, news_description, news_image) SELECT ?, cid, ?, ?, '' FROM tbl_news_category WHERE cid = ?", [$input['news_heading'], $input['news_date'], $input['news_description'], $input['cid']]);
+        $result = $this->query("INSERT INTO tbl_news (news_heading, cat_id, news_date, news_description, news_image, created_at, updated_at) SELECT ?, cid, ?, ?, '', ?, ? FROM tbl_news_category WHERE cid = ?", [$input['news_heading'], $input['news_date'], $input['news_description'], $now, $now, $input['cid']]);
         if (! (int) $result['affected']) {
             throw new ApiError(409, 'category_changed', 'دسته پیش از ذخیره حذف شده است.');
         }
@@ -187,9 +201,9 @@ class DivanRepository
         return (string) $result['id'];
     }
 
-    public function updateArticle($id, $input)
+    public function updateArticle($id, $input, $now)
     {
-        $result = $this->query('UPDATE tbl_news SET news_heading = ?, cat_id = ?, news_date = ?, news_description = ? WHERE nid = ? AND EXISTS (SELECT 1 FROM tbl_news_category WHERE cid = ?)', [$input['news_heading'], $input['cid'], $input['news_date'], $input['news_description'], $id, $input['cid']]);
+        $result = $this->query('UPDATE tbl_news SET news_heading = ?, cat_id = ?, news_date = ?, news_description = ?, updated_at = ? WHERE nid = ? AND EXISTS (SELECT 1 FROM tbl_news_category WHERE cid = ?)', [$input['news_heading'], $input['cid'], $input['news_date'], $input['news_description'], $now, $id, $input['cid']]);
         if (! (int) $result['affected']) {
             if (! $this->category($input['cid'])) {
                 throw new ApiError(409, 'category_changed', 'دسته پیش از ذخیره حذف شده است.');

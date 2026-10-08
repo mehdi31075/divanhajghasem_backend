@@ -53,12 +53,16 @@ class DivanApiTest extends TestCase
         $id = $this->withToken($token)->postJson('/mobile-api.php?action=create', $fields)->assertOk()->json('nid');
         $this->assertIsString($id);
         $this->flushHeaders();
-        $read = $this->getJson('/api.php?nid='.$id)->assertOk()->json('AndroidEbookApp.0');
+        $legacyRead = $this->getJson('/api.php?nid='.$id)->assertOk()->json('AndroidEbookApp.0');
+        $this->assertSame(['cid', 'category_name', 'category_image', 'author', 'status', 'nid', 'news_heading', 'cat_id', 'news_status', 'news_date', 'news_image', 'news_description'], array_keys($legacyRead));
+        $read = $this->getJson('/api.php?nid='.$id.'&include_dates=1')->assertOk()->json('AndroidEbookApp.0');
         $this->assertSame($fields['news_description'], $read['news_description']);
-        $this->assertSame(['cid', 'category_name', 'category_image', 'author', 'status', 'nid', 'news_heading', 'cat_id', 'news_status', 'news_date', 'news_image', 'news_description'], array_keys($read));
-        foreach ($read as $value) {
+        $this->assertSame(['cid', 'category_name', 'category_image', 'author', 'status', 'nid', 'news_heading', 'cat_id', 'news_status', 'news_date', 'news_image', 'news_description', 'created_at', 'updated_at'], array_keys($read));
+        foreach (array_slice($read, 0, 12) as $value) {
             $this->assertIsString($value);
         }
+        $this->assertMatchesRegularExpression('/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/', $read['created_at']);
+        $this->assertSame($read['created_at'], $read['updated_at']);
         $second = $this->withToken($token)->postJson('/mobile-api.php?action=create', $fields)->json('nid');
         $this->flushHeaders();
         $this->assertSame([$id, $second], array_column($this->getJson('/api.php?cat_id=61')->json('AndroidEbookApp'), 'nid'));
@@ -68,6 +72,8 @@ class DivanApiTest extends TestCase
         $this->withToken($token)->postJson('/mobile-api.php?action=update', $fields + ['id' => $id])->assertOk();
         $this->flushHeaders();
         $this->getJson('/api.php?nid='.$id)->assertJsonPath('AndroidEbookApp.0.news_heading', $fields['news_heading']);
+        $this->assertNotNull(DB::table('tbl_news')->where('nid', $id)->value('created_at'));
+        $this->assertNotNull(DB::table('tbl_news')->where('nid', $id)->value('updated_at'));
         $this->withToken($token)->postJson('/mobile-api.php?action=delete', ['id' => $id])->assertOk();
         $this->flushHeaders();
         $this->getJson('/api.php?nid='.$id)->assertExactJson([]);
@@ -131,6 +137,23 @@ class DivanApiTest extends TestCase
         $this->postJson('/mobile-api.php?action=delete', ['id' => $nid])->assertOk();
         $this->postJson('/mobile-api.php?action=category_delete', ['id' => $id])->assertOk();
         Storage::disk('category_images')->assertExists($image);
+    }
+
+    public function test_content_images_upload_to_the_host_and_are_returned_as_inline_media_urls(): void
+    {
+        Storage::fake('news_media');
+        $this->withToken($this->login());
+        $response = $this->post('/mobile-api.php?action=media_upload', [
+            'media_type' => 'image', 'media_file' => UploadedFile::fake()->image('درج-در-متن.png'),
+        ], ['Accept' => 'application/json'])->assertOk();
+        $url = $response->json('media.url');
+        $this->assertStringStartsWith('/upload/news-media/', $url);
+        $this->assertStringEndsWith('.png', $url);
+        Storage::disk('news_media')->assertExists(substr($url, strlen('/upload/news-media/')));
+        $this->post('/mobile-api.php?action=media_upload', [
+            'media_type' => 'image', 'media_file' => UploadedFile::fake()->createWithContent('wrong.png', '<?php echo 1;'),
+        ], ['Accept' => 'application/json'])->assertUnprocessable();
+        $this->getJson('/mobile-api.php?action=media_list')->assertOk()->assertJsonPath('videos', []);
     }
 
     public function test_validation_preserves_database_and_public_reader_is_injection_safe(): void

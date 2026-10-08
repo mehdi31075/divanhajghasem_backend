@@ -34,6 +34,11 @@ return [
             'visibility' => 'public', 'throw' => true,
         ],
 
+        'news_media' => [
+            'driver' => 'local', 'root' => public_path('upload/news-media'),
+            'visibility' => 'public', 'throw' => true,
+        ],
+
         'local' => [
             'driver' => 'local',
             'root' => storage_path('app/private'),
