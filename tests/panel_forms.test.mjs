@@ -12,7 +12,7 @@ const tick=()=>new Promise(resolve=>setTimeout(resolve,10));
 async function waitFor(fn){for(let i=0;i<100;i++){if(fn())return;await tick();}throw new Error('Timed out waiting for form state');}
 async function fixture({rich=false}={}){
  const dom=new JSDOM(html,{url:'https://fixture.test/index.php',runScripts:'outside-only'});
- const state={categories:[{cid:'61',category_name:'دسته اول',category_image:'one.png',author:'نویسنده',status:'1'}],posts:[],mutations:0,expired:false,loseNextResponse:false};
+ const state={categories:[{cid:'61',category_name:'دسته اول',category_image:'one.png',author:'نویسنده',status:'1'}],pages:[{slug:"first-talk",title:"سخن اول",html_body:"<p>متن اولیه</p>",revision:1}],posts:[],mutations:0,expired:false,loseNextResponse:false};
  dom.window.confirm=()=>true;dom.window.scrollTo=()=>{};
  dom.window.fetch=async(url,init)=>{
   assert.equal(init.credentials,'omit');const action=url.searchParams.get('action')||'';
@@ -26,9 +26,12 @@ async function fixture({rich=false}={}){
   if(action==='logout')return reply({ok:true});
   if(action==='stats')return reply({ok:true,stats:{posts:state.posts.length,categories:state.categories.length}});
   if(action==='posts')return reply({ok:true,posts:[...state.posts].reverse(),total:state.posts.length,page:1});
+  if(action==='pages')return reply({ok:true,pages:state.pages});
+  if(action==='page_update' && Number(fields.revision)!==state.pages.find(p=>p.slug===fields.slug).revision)return reply({ok:false,message:'صفحه روی سرور تغییر کرده است'},409);
   if(action==='account')return reply({ok:true,account:{Username:'fixture-admin',Email:'fixture@example.test'}});
   state.mutations++;
-  if(action==='create'){state.posts.push({...fields,nid:String(state.mutations),cat_id:fields.cid});}
+  if(action==='page_update'){const p=state.pages.find(p=>p.slug===fields.slug);Object.assign(p,{title:fields.title,html_body:fields.html_body,revision:p.revision+1});}
+  else if(action==='create'){state.posts.push({...fields,nid:String(state.mutations),cat_id:fields.cid});}
   else if(action==='update'){const p=state.posts.find(p=>p.nid===fields.id);Object.assign(p,fields,{cat_id:fields.cid});}
   else if(action==='delete'){state.posts=state.posts.filter(p=>p.nid!==fields.id);}
   else if(action==='category_update'){Object.assign(state.categories.find(c=>c.cid===fields.id),{category_name:fields.category_name,author:fields.author});}
@@ -128,5 +131,20 @@ test('CKEditor source mode saves table formatting and keeps unsaved source throu
   f.submit('#post-form');await waitFor(()=>f.state.posts.length===1 && !f.doc.querySelector('#post-form'));
   const body=f.state.posts[0].news_description;
   assert.match(body,/<table/);assert.match(body,/خانه جدول/);assert.match(body,/color:red/);
+ }finally{f.dom.window.close();}
+});
+
+test('page editor uses real CKEditor, preserves original HTML and reconciles a lost response',async()=>{
+ const f=await fixture({rich:true});try{
+  await f.login();await waitFor(()=>f.doc.querySelector('nav a[href="#pages"]'));f.click('nav a[href="#pages"]');await waitFor(()=>f.doc.querySelector('[data-route="page/first-talk"]'));
+  f.click('[data-route="page/first-talk"]');await waitFor(()=>f.doc.querySelector('.ck-editor__editable') && !f.doc.querySelector('#page-form button[type=submit]').disabled);
+  f.input('[name=title]','عنوان تازه');f.state.loseNextResponse=true;f.submit('#page-form');
+  await waitFor(()=>f.doc.querySelector('#page-form button[type=submit]').textContent==='بررسی نتیجه');
+  assert.equal(f.state.pages[0].html_body,'<p>متن اولیه</p>');assert.equal(f.state.pages[0].revision,2);
+  assert.equal(f.state.richEditor.isReadOnly,true);f.submit('#page-form');await waitFor(()=>!f.doc.querySelector('#page-form'));assert.equal(f.state.mutations,1);
+  f.click('[data-route="page/first-talk"]');await waitFor(()=>f.doc.querySelector('.ck-editor__editable') && !f.doc.querySelector('#page-form button[type=submit]').disabled);
+  f.state.richEditor.setData('<p><strong>متن تازه</strong></p>');f.state.pages[0].revision++;
+  f.submit('#page-form');await waitFor(()=>f.doc.querySelector('#page-form .form-message').textContent.includes('تغییر'));
+  assert.equal(f.state.richEditor.getData(),'<p><strong>متن تازه</strong></p>');assert.equal(f.state.richEditor.isReadOnly,false);assert.equal(f.state.pages[0].html_body,'<p>متن اولیه</p>');
  }finally{f.dom.window.close();}
 });

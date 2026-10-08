@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'paths' => ['api.php', 'mobile-api.php'],
+    'paths' => ['api.php', 'mobile-api.php', 'pages.php'],
     'allowed_methods' => ['GET', 'POST', 'OPTIONS'],
     'allowed_origins' => ['*'],
     'allowed_origins_patterns' => [],

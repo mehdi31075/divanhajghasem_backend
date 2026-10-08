@@ -7,11 +7,11 @@
   <title>دیوان · مدیریت محتوا</title>
   <link rel="icon" href="{{ asset('assets/panel/mark.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ asset('assets/ckeditor/ckeditor5.css') }}">
-  <link rel="stylesheet" href="{{ asset('assets/panel/panel.css') }}?v=20261007-ckeditor">
+  <link rel="stylesheet" href="{{ asset('assets/panel/panel.css') }}?v=20261007-pages">
   <script src="{{ asset('assets/purify/purify.min.js') }}" defer></script>
   <script src="{{ asset('assets/ckeditor/ckeditor5.umd.js') }}" defer></script>
   <script src="{{ asset('assets/ckeditor/fa.umd.js') }}" defer></script>
-  <script type="module" src="{{ asset('assets/panel/app.js') }}?v=20261007-ckeditor"></script>
+  <script type="module" src="{{ asset('assets/panel/app.js') }}?v=20261007-pages"></script>
 </head>
 <body>
   <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
@@ -46,6 +46,7 @@
         <a href="#home"><svg><use href="#i-home"/></svg><span>پیشخوان</span></a>
         <a href="#posts"><svg><use href="#i-book"/></svg><span>نوشته‌ها</span></a>
         <a href="#categories"><svg><use href="#i-grid"/></svg><span>دسته‌بندی‌ها</span></a>
+        <a href="#pages"><svg><use href="#i-book"/></svg><span>صفحه‌های دیوان</span></a>
         <a href="#account"><svg><use href="#i-user"/></svg><span>حساب مدیر</span></a>
       </nav>
       <div class="sidebar-foot"><span class="avatar"><svg><use href="#i-user"/></svg></span><div><strong id="identity"></strong><small>مدیر دیوان</small></div><button id="logout" type="button" aria-label="خروج از حساب" title="خروج"><svg><use href="#i-logout"/></svg></button></div>

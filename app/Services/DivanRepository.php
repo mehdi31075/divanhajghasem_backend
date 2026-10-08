@@ -90,6 +90,25 @@ class DivanRepository
         return $rows[0];
     }
 
+    public function pages()
+    {
+        $rows = $this->query("SELECT slug, title, html_body, revision, updated_at FROM divan_pages ORDER BY FIELD(slug, 'first-talk', 'last-talk', 'contact')");
+
+        return array_map(function ($row) {
+            $row['revision'] = (int) $row['revision'];
+            $row['updated_at'] = gmdate('Y-m-d\TH:i:s\Z', (int) $row['updated_at']);
+
+            return $row;
+        }, $rows);
+    }
+
+    public function updatePage($slug, $title, $body, $revision, $now)
+    {
+        $result = $this->query('UPDATE divan_pages SET title = ?, html_body = ?, revision = revision + 1, updated_at = ? WHERE slug = ? AND revision = ?', [$title, $body, $now, $slug, $revision]);
+
+        return (int) $result['affected'];
+    }
+
     public function posts($page, $search, $category)
     {
         $where = [];

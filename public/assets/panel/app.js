@@ -33,9 +33,60 @@ function editorHtml(original) {
     state.editor ? original : $('#body').value;
 }
 function markDirty() { state.dirty = true; }
+async function mountEditor(form, body, label = 'متن مطلب') {
+  if (window.CKEDITOR && window.DOMPurify) {
+    const textarea = $('#body');
+    const host = document.createElement('div'); host.className = 'editor-box';
+    const mount = document.createElement('div'); host.append(mount); textarea.after(host);
+    const C = window.CKEDITOR;
+    // Match the former panel's CKEditor tools, with a current local build.
+    const plugins = ['Essentials','Paragraph','Heading','Bold','Italic','Underline','Strikethrough',
+      'BlockQuote','Link','List','Indent','IndentBlock','Alignment','RemoveFormat','PasteFromOffice',
+      'Table','TableToolbar','TableProperties','TableCellProperties','Image','ImageCaption',
+      'ImageStyle','ImageResize','ImageToolbar','ImageInsertViaUrl','HorizontalLine',
+      'SpecialCharacters','SpecialCharactersEssentials','SourceEditing','GeneralHtmlSupport',
+      'FontFamily','FontSize','FontColor','FontBackgroundColor','Fullscreen'];
+    const submit = form.querySelector('button[type=submit]'); submit.disabled = true;
+    try {
+      const editor = await C.ClassicEditor.create(mount, {
+        licenseKey: 'GPL', plugins: plugins.map(name => C[name]),
+        language: {ui: 'fa', content: 'fa'},
+        initialData: window.DOMPurify.sanitize(body),
+        placeholder: 'متن نوشته را اینجا بنویسید…',
+        toolbar: {items: ['undo','redo','|','link','insertImageViaUrl','insertTable','horizontalLine',
+          'specialCharacters','|','sourceEditing','fullscreen','-','heading','fontFamily','fontSize',
+          '|','bold','italic','underline','strikethrough','removeFormat','|','bulletedList','numberedList',
+          'outdent','indent','blockQuote','alignment','|','fontColor','fontBackgroundColor'], shouldNotGroupWhenFull: true},
+        heading: {options: [{model: 'paragraph',title: 'متن معمولی',class: 'ck-heading_paragraph'},
+          ...[1,2,3].map(n => ({model: `heading${n}`,view: `h${n}`,title: `عنوان ${digits(n)}`,class: `ck-heading_heading${n}`}))]},
+        fontFamily: {options: ['default','Vazirmatn','Tahoma, sans-serif','Arial, Helvetica, sans-serif','Times New Roman, Times, serif'],supportAllValues: true},
+        fontSize: {options: [12,14,16,18,20,24,28,36],supportAllValues: true},
+        table: {contentToolbar: ['tableColumn','tableRow','mergeTableCells','tableProperties','tableCellProperties']},
+        image: {toolbar: ['imageTextAlternative','toggleImageCaption','imageStyle:inline','imageStyle:block','imageStyle:side','resizeImage']},
+        htmlSupport: {allow: [{name: /^(p|div|span|br|h[1-6]|pre|blockquote|ul|ol|li|a|img|figure|figcaption|table|thead|tbody|tfoot|tr|th|td|strong|b|em|i|u|s|sub|sup|hr)$/,styles: true,classes: true,attributes: true}]},
+      });
+      if (!form.isConnected) { await editor.destroy(); return; }
+      textarea.hidden = true;
+      editor.editing.view.change(writer => writer.setAttribute('aria-label', label, editor.editing.view.document.getRoot()));
+      let changed = false;
+      editor.model.document.on('change:data', () => { changed = true; markDirty(); });
+      // Source mode holds edits outside the model until getData() synchronizes it.
+      host.addEventListener('input', markDirty);
+      state.editor = {
+        checkDirty: () => { editor.getData(); return changed; },
+        getData: () => window.DOMPurify.sanitize(editor.getData()),
+        setReadOnly: blocked => blocked ? editor.enableReadOnlyMode('saving') : editor.disableReadOnlyMode('saving'),
+        destroy: () => { editor.destroy().catch(() => {}); host.remove(); },
+      };
+    } catch {
+      host.remove();
+      formMessage(form, 'ویرایشگر بارگیری نشد؛ متن در کادر HTML محفوظ است.');
+    } finally { submit.disabled = false; }
+  }
+}
 function setEditing(form, blocked) {
   for (const control of form.querySelectorAll('input,select,textarea,button[type=button]')) control.disabled = blocked;
-  if (form.id === 'post-form' && state.editor) state.editor.setReadOnly(blocked);
+  if (state.editor) state.editor.setReadOnly(blocked);
 }
 function bindForm(form, action, getFields, verify, onSuccess, before = null) {
   form.addEventListener('input', markDirty);
@@ -123,55 +174,7 @@ async function render(route) {
       after = async () => {
         const form = $('#post-form');
         const body = original?.news_description || '';
-        if (window.CKEDITOR && window.DOMPurify) {
-          const textarea = $('#body');
-          const host = document.createElement('div'); host.className = 'editor-box';
-          const mount = document.createElement('div'); host.append(mount); textarea.after(host);
-          const C = window.CKEDITOR;
-          // Match the former panel's CKEditor tools, with a current local build.
-          const plugins = ['Essentials','Paragraph','Heading','Bold','Italic','Underline','Strikethrough',
-            'BlockQuote','Link','List','Indent','IndentBlock','Alignment','RemoveFormat','PasteFromOffice',
-            'Table','TableToolbar','TableProperties','TableCellProperties','Image','ImageCaption',
-            'ImageStyle','ImageResize','ImageToolbar','ImageInsertViaUrl','HorizontalLine',
-            'SpecialCharacters','SpecialCharactersEssentials','SourceEditing','GeneralHtmlSupport',
-            'FontFamily','FontSize','FontColor','FontBackgroundColor','Fullscreen'];
-          const submit = form.querySelector('button[type=submit]'); submit.disabled = true;
-          try {
-            const editor = await C.ClassicEditor.create(mount, {
-              licenseKey: 'GPL', plugins: plugins.map(name => C[name]),
-              language: {ui: 'fa', content: 'fa'},
-              initialData: window.DOMPurify.sanitize(body),
-              placeholder: 'متن نوشته را اینجا بنویسید…',
-              toolbar: {items: ['undo','redo','|','link','insertImageViaUrl','insertTable','horizontalLine',
-                'specialCharacters','|','sourceEditing','fullscreen','-','heading','fontFamily','fontSize',
-                '|','bold','italic','underline','strikethrough','removeFormat','|','bulletedList','numberedList',
-                'outdent','indent','blockQuote','alignment','|','fontColor','fontBackgroundColor'], shouldNotGroupWhenFull: true},
-              heading: {options: [{model: 'paragraph',title: 'متن معمولی',class: 'ck-heading_paragraph'},
-                ...[1,2,3].map(n => ({model: `heading${n}`,view: `h${n}`,title: `عنوان ${digits(n)}`,class: `ck-heading_heading${n}`}))]},
-              fontFamily: {options: ['default','Vazirmatn','Tahoma, sans-serif','Arial, Helvetica, sans-serif','Times New Roman, Times, serif'],supportAllValues: true},
-              fontSize: {options: [12,14,16,18,20,24,28,36],supportAllValues: true},
-              table: {contentToolbar: ['tableColumn','tableRow','mergeTableCells','tableProperties','tableCellProperties']},
-              image: {toolbar: ['imageTextAlternative','toggleImageCaption','imageStyle:inline','imageStyle:block','imageStyle:side','resizeImage']},
-              htmlSupport: {allow: [{name: /^(p|div|span|br|h[1-6]|pre|blockquote|ul|ol|li|a|img|figure|figcaption|table|thead|tbody|tfoot|tr|th|td|strong|b|em|i|u|s|sub|sup|hr)$/,styles: true,classes: true,attributes: true}]},
-            });
-            if (!form.isConnected) { await editor.destroy(); return; }
-            textarea.hidden = true;
-            editor.editing.view.change(writer => writer.setAttribute('aria-label', 'متن مطلب', editor.editing.view.document.getRoot()));
-            let changed = false;
-            editor.model.document.on('change:data', () => { changed = true; markDirty(); });
-            // Source mode holds edits outside the model until getData() synchronizes it.
-            host.addEventListener('input', markDirty);
-            state.editor = {
-              checkDirty: () => { editor.getData(); return changed; },
-              getData: () => window.DOMPurify.sanitize(editor.getData()),
-              setReadOnly: blocked => blocked ? editor.enableReadOnlyMode('saving') : editor.disableReadOnlyMode('saving'),
-              destroy: () => { editor.destroy().catch(() => {}); host.remove(); },
-            };
-          } catch {
-            host.remove();
-            formMessage(form, 'ویرایشگر بارگیری نشد؛ متن در کادر HTML محفوظ است.');
-          } finally { submit.disabled = false; }
-        }
+        await mountEditor(form, body);
         $('#refresh-preview').onclick = () => preview($('.preview'), editorHtml(body));
         const fields = () => ({...Object.fromEntries(new FormData(form)), news_description: editorHtml(body), ...(original ? {id: String(id)} : {})});
         bindForm(form, original ? 'update' : 'create', fields,
@@ -198,6 +201,21 @@ async function render(route) {
         const matches = (await api.call('')).filter(c => (original ? String(c.cid) === String(id) : !baseline.includes(String(c.cid))) && c.category_name === fields.get('category_name') && c.author === fields.get('author') && (file?.size ? !!c.category_image && c.category_image !== original?.category_image : c.category_image === original?.category_image));
         return matches.length === 1;
       }, () => render('categories'), () => Promise.resolve(state.categories.map(c => String(c.cid))));
+    };
+  } else if (view === 'pages') {
+    const rows = (await api.call('pages')).pages;
+    html = `<h1>صفحه‌های دیوان</h1><div class="grid">${rows.map(p => `<section class="card"><h2>${e(p.title)}</h2><div class="actions">${button('ویرایش', `page/${p.slug}`)}</div></section>`).join('')}</div>`;
+  } else if (view === 'page') {
+    const original = (await api.call('pages')).pages.find(p => p.slug === id);
+    if (!original) throw new ApiError('صفحه موجود نیست.');
+    html = `<div class="actions"><h1>ویرایش ${e(original.title)}</h1>${button('بازگشت', 'pages')}</div><form id="page-form" class="card form-card"><label>عنوان<input name="title" maxlength="255" required value="${e(original.title)}"></label><label>متن صفحه<textarea id="body" name="html_body">${e(original.html_body)}</textarea></label><details><summary>پیش‌نمایش متن</summary><button id="refresh-preview" type="button">نمایش متن فعلی</button><iframe class="preview" sandbox="" referrerpolicy="no-referrer" title="پیش‌نمایش متن"></iframe></details><p class="form-message" role="alert"></p><button type="submit" class="primary">ذخیره روی سرور</button></form>`;
+    after = async () => {
+      const form = $('#page-form');
+      await mountEditor(form, original.html_body, 'متن صفحه');
+      $('#refresh-preview').onclick = () => preview($('.preview'), editorHtml(original.html_body));
+      bindForm(form, 'page_update', () => ({...Object.fromEntries(new FormData(form)), html_body: editorHtml(original.html_body), slug: id, revision: String(original.revision)}),
+        async target => (await api.call('pages')).pages.some(p => p.slug === target.slug && p.title === target.title && p.html_body === target.html_body && p.revision === Number(target.revision) + 1),
+        () => render('pages'));
     };
   } else if (view === 'account') {
     const data = (await api.call('account')).account;

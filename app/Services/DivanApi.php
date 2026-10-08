@@ -110,10 +110,10 @@ class DivanApi
 
             return $rows ? ['AndroidEbookApp' => $rows] : [];
         }
-        if (! in_array($action, ['login', 'me', 'logout', 'create', 'update', 'delete', 'stats', 'posts', 'account', 'account_update', 'category_create', 'category_update', 'category_delete'], true)) {
+        if (! in_array($action, ['login', 'me', 'logout', 'create', 'update', 'delete', 'stats', 'posts', 'pages', 'page_update', 'account', 'account_update', 'category_create', 'category_update', 'category_delete'], true)) {
             throw new ApiError(404, 'unknown_action', 'این عملیات وجود ندارد.');
         }
-        $requiredMethod = in_array($action, ['me', 'stats', 'posts', 'account'], true) ? 'GET' : 'POST';
+        $requiredMethod = in_array($action, ['me', 'stats', 'posts', 'pages', 'account'], true) ? 'GET' : 'POST';
         if ($method !== $requiredMethod) {
             throw new ApiError(405, 'method_not_allowed', 'روش درخواست معتبر نیست.');
         }
@@ -135,6 +135,29 @@ class DivanApi
             return ['ok' => true, 'access_token' => $token, 'token_type' => 'Bearer', 'expires_in' => $this->ttl, 'username' => $user['Username']];
         }
         $username = $this->principal($bearer, $now);
+        if ($action === 'pages') {
+            return ['ok' => true, 'pages' => $this->store->pages()];
+        }
+        if ($action === 'page_update') {
+            $slug = $input['slug'] ?? null;
+            if (! in_array($slug, ['first-talk', 'last-talk', 'contact'], true)) {
+                throw new ApiError(422, 'invalid_page', 'صفحه معتبر نیست.');
+            }
+            foreach (['title' => 1000, 'html_body' => 3000000] as $field => $limit) {
+                if (! isset($input[$field]) || ! is_string($input[$field]) || trim($input[$field]) === '' || strlen($input[$field]) > $limit || ! preg_match('//u', $input[$field]) || preg_match('/[\xF0-\xF4][\x80-\xBF]{3}/', $input[$field])) {
+                    throw new ApiError(422, 'invalid_page_content', 'عنوان و متن معتبر و در محدودهٔ مجاز وارد کنید؛ ایموجی در دیتابیس فعلی پشتیبانی نمی‌شود.');
+                }
+            }
+            if (mb_strlen($input['title']) > 255) {
+                throw new ApiError(422, 'invalid_page_content', 'عنوان حداکثر ۲۵۵ نویسه باشد.');
+            }
+            $revision = $this->id($input['revision'] ?? null);
+            if (! $this->store->updatePage($slug, $input['title'], $input['html_body'], $revision, $now)) {
+                throw new ApiError(409, 'page_changed', 'صفحه روی سرور تغییر کرده است؛ متن خود را نگه دارید و نسخهٔ تازه را بررسی کنید.');
+            }
+
+            return ['ok' => true];
+        }
         if ($action === 'me') {
             return ['ok' => true, 'username' => $username];
         }
