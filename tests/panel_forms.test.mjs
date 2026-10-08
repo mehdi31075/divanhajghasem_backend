@@ -142,7 +142,8 @@ test('post editor inserts an uploaded host video from its media library',async()
   f.state.videos=[{name:'clip.mp4',url:'/upload/news-media/clip.mp4',mime_type:'video/mp4',created_at:'2026-10-08T10:00:00Z'}];
   await f.login();await waitFor(()=>f.doc.querySelector('[data-route="post-new"]'));
   f.click('[data-route="post-new"]');await waitFor(()=>f.doc.querySelector('.ck-editor__editable') && !f.doc.querySelector('#post-form button[type=submit]').disabled);
-  f.click('#insert-video');await waitFor(()=>f.doc.querySelector('[data-insert-video]'));
+  const videoAction=f.doc.querySelector('.divan-video-button');assert.ok(videoAction);assert.equal(videoAction.closest('.ck-toolbar__items')!==null,true);assert.equal(videoAction.getAttribute('aria-label'),'بارگذاری و درج ویدیو از هاست');
+  f.click('.divan-video-button');await waitFor(()=>f.doc.querySelector('[data-insert-video]'));
   f.click('[data-insert-video]');await waitFor(()=>!f.doc.querySelector('.media-dialog'));
   assert.match(f.state.richEditor.getData(),/<video[^>]*src="https:\/\/divanhajghasem\.ir\/upload\/news-media\/clip\.mp4"/);
  }finally{f.dom.window.close();}

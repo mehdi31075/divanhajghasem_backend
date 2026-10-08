@@ -7,11 +7,11 @@
   <title>دیوان · مدیریت محتوا</title>
   <link rel="icon" href="{{ asset('assets/panel/mark.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ asset('assets/ckeditor/ckeditor5.css') }}">
-  <link rel="stylesheet" href="{{ asset('assets/panel/panel.css') }}?v=20261008-inline-media">
+  <link rel="stylesheet" href="{{ asset('assets/panel/panel.css') }}?v=20261008-video-toolbar">
   <script src="{{ asset('assets/purify/purify.min.js') }}" defer></script>
   <script src="{{ asset('assets/ckeditor/ckeditor5.umd.js') }}" defer></script>
   <script src="{{ asset('assets/ckeditor/fa.umd.js') }}" defer></script>
-  <script type="module" src="{{ asset('assets/panel/app.js') }}?v=20261008-inline-media"></script>
+  <script type="module" src="{{ asset('assets/panel/app.js') }}?v=20261008-video-toolbar"></script>
 </head>
 <body>
   <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>

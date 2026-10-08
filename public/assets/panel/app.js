@@ -138,6 +138,19 @@ async function mountEditor(form, body, label = 'متن مطلب') {
       });
       if (!form.isConnected) { await editor.destroy(); return; }
       editor.plugins.get('FileRepository').createUploadAdapter = loader => new ImageUploadAdapter(loader);
+      const toolbar = editor.ui.view.toolbar.element.querySelector('.ck-toolbar__items');
+      const videoButton = document.createElement('button');
+      videoButton.type = 'button';
+      videoButton.className = 'ck ck-button ck-button_with-text divan-video-button';
+      videoButton.setAttribute('aria-label', 'بارگذاری و درج ویدیو از هاست');
+      videoButton.title = 'بارگذاری یا انتخاب ویدیو از هاست';
+      videoButton.innerHTML = '<svg aria-hidden="true" viewBox="0 0 20 20"><path d="M3 4.5h9.5v11H3zM12.5 8l4.5-2.5v9L12.5 12z"/></svg><span class="ck-button__label">ویدیو</span>';
+      videoButton.addEventListener('click', () => videoLibrary(form, editor));
+      if (toolbar) {
+        const imageButton = [...toolbar.querySelectorAll('button')].find(button => /image/i.test(button.getAttribute('aria-label') || ''));
+        if (imageButton) imageButton.after(videoButton);
+        else toolbar.append(videoButton);
+      } else host.prepend(videoButton);
       textarea.hidden = true;
       editor.editing.view.change(writer => writer.setAttribute('aria-label', label, editor.editing.view.document.getRoot()));
       let changed = false;
@@ -243,16 +256,11 @@ async function render(route) {
     if (view === 'post' && !original) throw new ApiError('مطلب دیگر موجود نیست.');
     if (!state.categories.length) { html = `<section class="card"><h1>ابتدا دسته بسازید</h1>${button('دسته‌بندی‌ها', 'categories')}</section>`; }
     else {
-      html = `<div class="actions"><h1>${original ? 'ویرایش مطلب' : 'مطلب جدید'}</h1>${button('بازگشت', 'posts')}</div>${original ? `<p class="article-dates">ایجاد: ${e(displayDate(original.created_at))}　·　آخرین ویرایش: ${e(displayDate(original.updated_at))}</p>` : ''}<form id="post-form" class="card form-card"><label>عنوان<input name="news_heading" maxlength="500" required value="${e(original?.news_heading)}"></label><label>عنوان فرعی<input name="news_date" maxlength="255" required value="${e(original?.news_date)}"></label><label>دسته<select name="cid">${categoryOptions(original?.cat_id)}</select></label><label>متن مطلب<textarea id="body" name="news_description">${e(original?.news_description)}</textarea></label><button id="insert-video" type="button" class="media-button">افزودن ویدیو از کتابخانهٔ هاست</button><p class="help">برای عکس، از دکمهٔ تصویر در نوار ویرایشگر استفاده کنید؛ فایل در هاست بارگذاری و همان‌جا در متن درج می‌شود.</p><details><summary>پیش‌نمایش متن</summary><button id="refresh-preview" type="button">نمایش متن فعلی</button><iframe class="preview" sandbox="" referrerpolicy="no-referrer" title="پیش‌نمایش متن"></iframe></details><p class="form-message" role="alert"></p><button type="submit" class="primary">ذخیره روی سرور</button></form>`;
+      html = `<div class="actions"><h1>${original ? 'ویرایش مطلب' : 'مطلب جدید'}</h1>${button('بازگشت', 'posts')}</div>${original ? `<p class="article-dates">ایجاد: ${e(displayDate(original.created_at))}　·　آخرین ویرایش: ${e(displayDate(original.updated_at))}</p>` : ''}<form id="post-form" class="card form-card"><label>عنوان<input name="news_heading" maxlength="500" required value="${e(original?.news_heading)}"></label><label>عنوان فرعی<input name="news_date" maxlength="255" required value="${e(original?.news_date)}"></label><label>دسته<select name="cid">${categoryOptions(original?.cat_id)}</select></label><label>متن مطلب<textarea id="body" name="news_description">${e(original?.news_description)}</textarea></label><p class="help">برای ویدیو، دکمهٔ «ویدیو» کنار دکمهٔ تصویر در نوار بالای ویرایشگر را بزنید. برای عکس از دکمهٔ تصویر استفاده کنید.</p><details><summary>پیش‌نمایش متن</summary><button id="refresh-preview" type="button">نمایش متن فعلی</button><iframe class="preview" sandbox="" referrerpolicy="no-referrer" title="پیش‌نمایش متن"></iframe></details><p class="form-message" role="alert"></p><button type="submit" class="primary">ذخیره روی سرور</button></form>`;
       after = async () => {
         const form = $('#post-form');
         const body = original?.news_description || '';
         await mountEditor(form, body);
-        $('#insert-video').addEventListener('click', () => {
-          if (!state.editor) { formMessage(form, 'ویرایشگر در دسترس نیست.'); return; }
-          if (!state.editor.instance) { formMessage(form, 'ویرایشگر در دسترس نیست.'); return; }
-          videoLibrary(form, state.editor.instance);
-        });
         $('#refresh-preview').onclick = () => preview($('.preview'), editorHtml(body));
         const fields = () => ({...Object.fromEntries(new FormData(form)), news_description: editorHtml(body), ...(original ? {id: String(id)} : {})});
         bindForm(form, original ? 'update' : 'create', fields,
