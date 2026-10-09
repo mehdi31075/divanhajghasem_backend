@@ -47,6 +47,31 @@ check($login['expires_in'] === 3600, 'bounded expiry');
 $stored = $store->rows('SELECT * FROM divan_api_tokens')[0];
 check($stored['token_hash'] === hash('sha256', $token) && $stored['token_hash'] !== $token, 'only hashed token stored');
 check($call('GET', 'me', [], $token)['username'] === 'fixture-admin', 'token authenticates');
+$supportStart = $call('POST', 'support_start', ['name' => 'کاربر آزمایشی', 'mobile' => '۰۹۱۲۳۴۵۶۷۸۹']);
+check($supportStart['mode'] === 'register' && preg_match('/^[0-9]{6}$/', $supportStart['test_otp']), 'support registration creates a temporary OTP');
+check(! isset($supportStart['receipt']), 'support registration has no tracking receipt');
+check($store->supportUserByPhone('+989123456789')['name'] === 'کاربر آزمایشی', 'support account is keyed by normalized mobile');
+rejected(function () use ($call) {
+    $call('POST', 'support_send', ['message' => 'بدون حساب']);
+}, 401, 'support message requires a signed-in account');
+rejected(function () use ($call, $supportStart) {
+    $call('POST', 'support_verify', ['challenge_id' => $supportStart['challenge_id'], 'otp' => '000000']);
+}, 401, 'wrong support OTP rejected');
+$supportLogin = $call('POST', 'support_verify', ['challenge_id' => $supportStart['challenge_id'], 'otp' => $supportStart['test_otp']]);
+$supportToken = $supportLogin['access_token'];
+check(strlen($supportToken) === 64 && $supportLogin['user']['mobile'] === '+989123456789', 'OTP verification returns a support-only bearer');
+check($call('POST', 'support_send', ['message' => 'پیشنهاد فارسی'], $supportToken)['ok'], 'signed-in user can send a support message');
+$myMessages = $call('GET', 'support_mine', [], $supportToken)['messages'];
+check(count($myMessages) === 1 && $myMessages[0]['message'] === 'پیشنهاد فارسی', 'support account retrieves its own messages');
+$adminMessages = $call('GET', 'support_list', [], $token)['messages'];
+check($adminMessages[0]['user_name'] === 'کاربر آزمایشی' && $adminMessages[0]['user_mobile'] === '+989123456789', 'admin can identify the support account');
+rejected(function () use ($call, $supportStart) {
+    $call('POST', 'support_create', ['message' => 'بدون ورود']);
+}, 410, 'receipt-based public support flow is retired');
+check($call('POST', 'support_logout', [], $supportToken)['ok'], 'support logout revokes its token');
+rejected(function () use ($call, $supportToken) {
+    $call('GET', 'support_mine', [], $supportToken);
+}, 401, 'revoked support token rejected');
 rejected(function () use ($call) {
     $call('GET', 'me', [], str_repeat('a', 64));
 }, 401, 'forged token');

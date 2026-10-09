@@ -114,75 +114,27 @@ function mediaLibrary(editor = null) {
   dialog.showModal(); void refresh();
   return () => dialog.remove();
 }
-const toolbarIconPaths = {
-  undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h9a6 6 0 0 1 0 12h-2"/>',
-  redo: '<path d="m15 14 5-5-5-5"/><path d="M20 9h-9a6 6 0 0 0 0 12h2"/>',
-  link: '<path d="M10 13.5 14 10.5"/><path d="M8.5 15.5 7 17a4 4 0 0 1-5.7-5.7l4.2-4.2a4 4 0 0 1 5.7 0"/><path d="m15.5 8.5 1.5-1.5a4 4 0 0 1 5.7 5.7l-4.2 4.2a4 4 0 0 1-5.7 0"/>',
-  image: '<rect x="3" y="3.5" width="18" height="17" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m4 17 5-5 3.5 3 2.5-2.5L20 17"/>',
-  imageUrl: '<rect x="3" y="3.5" width="18" height="17" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m4 17 5-5 3.5 3 2.5-2.5L20 17"/><path d="M17 2v5m-2.5-2.5h5"/>',
-  table: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18m6-18v18"/>',
-  rule: '<path d="M4 12h16"/><circle cx="4" cy="12" r="1"/><circle cx="20" cy="12" r="1"/>',
-  special: '<path d="m12 3 2.3 5.1 5.6.7-4.1 3.9 1.1 5.6-4.9-2.8-4.9 2.8 1.1-5.6-4.1-3.9 5.6-.7L12 3Z"/>',
-  source: '<path d="m8 5-6 7 6 7M16 5l6 7-6 7M14 3l-4 18"/>',
-  fullscreen: '<path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/>',
-  heading: '<path d="M5 5v14M19 5v14M5 12h14"/><path d="M2 5h6M16 5h6M2 19h6M16 19h6"/>',
-  font: '<path d="M4 19 10 5l6 14M6.5 13h7"/><path d="M16 10h5m-2.5-2.5v12"/>',
-  size: '<path d="M4 19 10 5l6 14M6.5 13h7M17 7h5m-2.5-2.5v5"/>',
-  bold: '<path d="M7 4h6a4 4 0 0 1 0 8H7zM7 12h7a4 4 0 0 1 0 8H7z"/>',
-  italic: '<path d="M14 4h7M3 20h7M14 4 10 20"/>',
-  underline: '<path d="M6 4v6a6 6 0 0 0 12 0V4M4 21h16"/>',
-  strike: '<path d="M7 5a6 6 0 0 1 10 2M17 19a6 6 0 0 1-10-2M3 12h18"/>',
-  clear: '<path d="m4 7 5-5 11 11-5 5L4 7Z"/><path d="m3 13 8 8m-9 0h8"/>',
-  bullets: '<circle cx="5" cy="6" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="5" cy="18" r="1"/><path d="M10 6h11M10 12h11M10 18h11"/>',
-  numbers: '<path d="M4 5h2v4M4 9h3M4 13h3l-3 4h3M11 6h10M11 12h10M11 18h10"/>',
-  outdent: '<path d="M10 5h11M10 12h11M10 19h11M3 8l4 4-4 4"/>',
-  indent: '<path d="M10 5h11M10 12h11M10 19h11M7 8l-4 4 4 4"/>',
-  quote: '<path d="M10 11H4V5h7v7l-4 7M20 11h-6V5h7v7l-4 7"/>',
-  align: '<path d="M4 5h16M4 9h11M4 13h16M4 17h11M4 21h16"/>',
-  color: '<path d="M5 17 11 4l6 13M7.5 12h7M4 21h16"/><path d="M19 4v4"/>',
-  background: '<path d="M4 16 14 6l4 4L8 20H4v-4Z"/><path d="m12 8 4 4M3 22h18"/>'
-};
 function replaceToolbarIcons(editor) {
-  const labels = {undo:'واگرد',redo:'دوباره',link:'پیوند',image:'بارگذاری تصویر',imageUrl:'تصویر از نشانی',table:'جدول',rule:'خط جداکننده',special:'نویسه ویژه',source:'کد HTML',fullscreen:'تمام‌صفحه',heading:'سبک متن',font:'قلم',size:'اندازه',bold:'درشت',italic:'کج',underline:'زیرخط',strike:'خط‌خورده',clear:'پاک‌کردن قالب',bullets:'فهرست',numbers:'فهرست عددی',outdent:'کاهش تورفتگی',indent:'افزایش تورفتگی',quote:'نقل‌قول',align:'چینش',color:'رنگ متن',background:'رنگ زمینه'};
-  const toolbar = editor.ui.view.toolbar.element;
-  for (const button of toolbar.querySelectorAll('button')) {
-    const label = [button.getAttribute('aria-label'), button.getAttribute('title'),
-      button.getAttribute('data-cke-tooltip-text'), button.textContent]
+  const labels = [
+    [/redo|باز ?انجام/, 'دوباره'], [/undo|بازگردانی/, 'واگرد'],
+    [/image.*url|url.*image|تصویر.*نشانی|نشانی.*تصویر/, 'تصویر از نشانی'],
+    [/upload image|computer|بارگذار.*تصویر|آپلود.*تصویر/, 'بارگذاری تصویر'],
+    [/link|پیوند/, 'پیوند'], [/table|جدول/, 'جدول'], [/horizontal line|خط افقی/, 'خط جداکننده'],
+    [/special character|کاراکتر ویژه/, 'نویسهٔ ویژه'], [/source|سورس/, 'کد HTML'],
+    [/fullscreen|full screen|تمام صفحه/, 'تمام‌صفحه'], [/heading|متن معمولی|عنوان/, 'سبک متن'],
+    [/font family|family font|خانواده فونت/, 'قلم'], [/font size|اندازه فونت/, 'اندازه'],
+    [/strikethrough|خط خورده/, 'خط‌خورده'], [/remove format|حذف کردن قالب/, 'پاک‌کردن قالب'],
+    [/bulleted list|نشانه.?دار/, 'فهرست'], [/numbered list|لیست عددی/, 'فهرست عددی'],
+    [/outdent|کاهش تورفتگی/, 'کاهش تورفتگی'], [/indent|افزایش تورفتگی/, 'افزایش تورفتگی'],
+    [/block.?quote|نقل قول/, 'نقل‌قول'], [/alignment|تراز متن/, 'چینش'],
+    [/font.?color|رنگ فونت/, 'رنگ متن'], [/background|پس.?زمینه/, 'رنگ زمینه'],
+    [/bold|درشت/, 'درشت'], [/italic|کج/, 'کج'], [/underline|خط زیر/, 'زیرخط'],
+  ];
+  for (const button of editor.ui.view.toolbar.element.querySelectorAll('button')) {
+    const current = [button.getAttribute('aria-label'), button.getAttribute('title'), button.getAttribute('data-cke-tooltip-text'), button.textContent]
       .filter(Boolean).join(' ').toLowerCase();
-    let key = null;
-    if (/redo|باز ?انجام/.test(label)) key = 'redo';
-    else if (/undo|بازگردانی/.test(label)) key = 'undo';
-    else if (/background|پس.?زمینه/.test(label)) key = 'background';
-    else if (/font.?color|رنگ فونت/.test(label)) key = 'color';
-    else if (/upload image|computer|بارگذار.*تصویر|آپلود.*تصویر/.test(label)) key = 'image';
-    else if (/image.*url|url.*image|تصویر.*نشانی|نشانی.*تصویر/.test(label)) key = 'imageUrl';
-    else if (/link|پیوند/.test(label)) key = 'link';
-    else if (/table|جدول/.test(label)) key = 'table';
-    else if (/horizontal line|خط افقی/.test(label)) key = 'rule';
-    else if (/special character|کاراکتر ویژه/.test(label)) key = 'special';
-    else if (/source|سورس/.test(label)) key = 'source';
-    else if (/fullscreen|full screen|تمام صفحه/.test(label)) key = 'fullscreen';
-    else if (/heading|متن معمولی|عنوان/.test(label)) key = 'heading';
-    else if (/font family|family font|خانواده فونت/.test(label)) key = 'font';
-    else if (/font size|اندازه فونت/.test(label)) key = 'size';
-    else if (/strikethrough|خط خورده/.test(label)) key = 'strike';
-    else if (/remove format|حذف کردن قالب/.test(label)) key = 'clear';
-    else if (/bulleted list|نشانه.?دار/.test(label)) key = 'bullets';
-    else if (/numbered list|لیست عددی/.test(label)) key = 'numbers';
-    else if (/outdent|کاهش تورفتگی/.test(label)) key = 'outdent';
-    else if (/indent|افزایش تورفتگی/.test(label)) key = 'indent';
-    else if (/block.?quote|نقل قول/.test(label)) key = 'quote';
-    else if (/alignment|تراز متن/.test(label)) key = 'align';
-    else if (/bold|درشت/.test(label)) key = 'bold';
-    else if (/italic|کج/.test(label)) key = 'italic';
-    else if (/underline|خط زیر/.test(label)) key = 'underline';
-    if (!key) continue;
-    const icon = button.querySelector('svg.ck-icon');
-    if (icon) icon.outerHTML = `<svg class="ck ck-icon divan-toolbar-icon" data-divan-icon="${key}" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${toolbarIconPaths[key]}</svg>`;
-    button.classList.add('ck-button_with-text', 'divan-toolbar-control');
-    let text = button.querySelector('.ck-button__label');
-    if (!text) { text = document.createElement('span'); text.className = 'ck-button__label'; button.append(text); }
-    text.textContent = labels[key];
+    const match = labels.find(([pattern]) => pattern.test(current));
+    if (match) { button.setAttribute('aria-label', match[1]); button.title = match[1]; }
   }
 }
 class ImageUploadAdapter {
@@ -348,7 +300,7 @@ async function render(route) {
     after = () => { $('#open-media-library').onclick = () => mediaLibrary(); };
   } else if (view === 'support') {
     const result = await api.call('support_list');
-    html = `<div class="actions"><h1>پیام‌های پشتیبانی</h1><span class="category-badge">${digits(result.messages.length)} پیام اخیر</span></div><section class="support-list">${result.messages.map(item => `<article class="card support-card"><div class="support-meta"><strong>پیام ${digits(item.id)}</strong><small>${e(displayDate(item.created_at))}</small></div><p class="support-message">${e(item.message)}</p><form class="support-reply-form" data-support-reply="${e(item.id)}"><label>پاسخ شما<textarea name="reply" maxlength="4000" rows="3" placeholder="پاسخ متنی برای کاربر">${e(item.reply || '')}</textarea></label><div class="support-meta"><small>${item.replied_at ? `پاسخ آخر: ${e(displayDate(item.replied_at))}` : 'هنوز پاسخی ثبت نشده'}</small><button class="primary compact" type="submit">ذخیرهٔ پاسخ</button></div><p class="form-message" role="alert"></p></form></article>`).join('') || '<section class="card empty">هنوز پیامی دریافت نشده است.</section>'}</section>`;
+    html = `<div class="actions"><h1>پیام‌های پشتیبانی</h1><span class="category-badge">${digits(result.messages.length)} پیام اخیر</span></div><section class="support-list">${result.messages.map(item => `<article class="card support-card"><div class="support-meta"><strong>پیام ${digits(item.id)} · ${e(item.user_name || 'حساب قدیمی')}</strong><small>${e(item.user_mobile || '')} ${item.user_mobile ? '·' : ''} ${e(displayDate(item.created_at))}</small></div><p class="support-message">${e(item.message)}</p><form class="support-reply-form" data-support-reply="${e(item.id)}"><label>پاسخ شما<textarea name="reply" maxlength="4000" rows="3" placeholder="پاسخ متنی برای کاربر">${e(item.reply || '')}</textarea></label><div class="support-meta"><small>${item.replied_at ? `پاسخ آخر: ${e(displayDate(item.replied_at))}` : 'هنوز پاسخی ثبت نشده'}</small><button class="primary compact" type="submit">ذخیرهٔ پاسخ</button></div><p class="form-message" role="alert"></p></form></article>`).join('') || '<section class="card empty">هنوز پیامی دریافت نشده است.</section>'}</section>`;
     after = () => {
       $('#content').addEventListener('input', event => { if (event.target.closest('[data-support-reply]')) state.dirty = true; });
       $('#content').addEventListener('submit', async event => {
@@ -358,6 +310,9 @@ async function render(route) {
         catch (error) { if (error.status === 401) lock(error.message); formMessage(form, error.message); submit.disabled = false; }
       });
     };
+  } else if (view === 'users') {
+    const result = await api.call('users');
+    html = `<div class="actions"><h1>کاربران اپ</h1><span class="category-badge">${digits(result.users.length)} حساب</span></div><p class="help">حساب‌های ساخته‌شده با تأیید شمارهٔ موبایل؛ همان حساب برای ارسال و پیگیری پیام‌های پشتیبانی استفاده می‌شود.</p><section class="card table-wrap"><table><thead><tr><th>نام</th><th>شمارهٔ موبایل</th><th>عضویت</th><th>پیام‌های پشتیبانی</th></tr></thead><tbody>${result.users.map(user => `<tr><td><strong>${e(user.name || '—')}</strong></td><td dir="ltr">${e(user.mobile)}</td><td><small>${e(displayDate(user.created_at))}</small></td><td>${digits(user.support_messages)}</td></tr>`).join('')}</tbody></table>${result.users.length ? '' : '<p class="empty">هنوز کاربری ثبت‌نام نکرده است.</p>'}</section>`;
   } else if (view === 'read') {
     const article = (await api.call('', {query: {nid: id}}))[0];
     if (!article) throw new ApiError('مطلب دیگر موجود نیست.');

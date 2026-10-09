@@ -11,6 +11,11 @@ Artisan::command('divan:check', function () {
         'tbl_news' => ['nid', 'news_heading', 'cat_id', 'news_status', 'news_date', 'news_image', 'news_description', 'created_at', 'updated_at'],
         'divan_api_tokens' => ['token_hash', 'username', 'password_digest', 'created_at', 'expires_at'],
         'divan_api_login_attempts' => ['ip_hash', 'attempted_at'],
+        'divan_support_users' => ['id', 'name', 'mobile', 'created_at', 'updated_at'],
+        'divan_support_otps' => ['challenge_id', 'user_id', 'mobile', 'code_hash', 'attempts', 'created_at', 'expires_at', 'consumed_at'],
+        'divan_support_tokens' => ['token_hash', 'user_id', 'created_at', 'expires_at'],
+        'divan_support_messages' => ['user_id', 'message', 'reply', 'created_at', 'replied_at'],
+        'divan_post_views' => ['post_id', 'views'],
     ];
     foreach ($expected as $table => $columns) {
         if (! Schema::hasTable($table) || ! Schema::hasColumns($table, $columns)) {

@@ -92,6 +92,42 @@ class DivanApiTest extends TestCase
         $this->getJson('/api.php')->assertOk();
     }
 
+    public function test_app_accounts_use_phone_otp_then_name_only_for_new_users_and_are_listed_in_panel(): void
+    {
+        $started = $this->postJson('/mobile-api.php?action=user_start', ['mobile' => '۰۹۱۲۳۴۵۶۷۸۹'])
+            ->assertOk()->assertJsonPath('mode', 'register');
+        $challenge = $started->json('challenge_id');
+        $otp = $started->json('test_otp');
+        $this->postJson('/mobile-api.php?action=user_verify', ['challenge_id' => $challenge, 'otp' => $otp])
+            ->assertOk()->assertJsonPath('needs_name', true);
+        $registered = $this->postJson('/mobile-api.php?action=user_verify', [
+            'challenge_id' => $challenge, 'otp' => $otp, 'name' => 'کاربر تازه',
+        ])->assertOk()->assertJsonPath('user.name', 'کاربر تازه');
+        $userToken = $registered->json('access_token');
+        $this->withToken($userToken)->getJson('/mobile-api.php?action=user_me')
+            ->assertOk()->assertJsonPath('user.mobile', '+989123456789');
+        $admin = $this->login();
+        $this->withToken($admin)->getJson('/mobile-api.php?action=users')
+            ->assertOk()->assertJsonPath('users.0.name', 'کاربر تازه')
+            ->assertJsonPath('users.0.mobile', '+989123456789');
+        $this->withToken($userToken)->postJson('/mobile-api.php?action=user_logout')->assertOk();
+        $this->withToken($userToken)->getJson('/mobile-api.php?action=user_me')->assertUnauthorized();
+    }
+
+    public function test_article_views_are_separate_from_legacy_payload_until_flutter_opts_in(): void
+    {
+        $admin = $this->login();
+        $id = $this->withToken($admin)->postJson('/mobile-api.php?action=create', $this->postFields())->assertOk()->json('nid');
+        $this->postJson('/mobile-api.php?action=article_view', ['nid' => $id])->assertOk()->assertJsonPath('views', 1);
+        $this->postJson('/mobile-api.php?action=article_view', ['nid' => $id])->assertOk()->assertJsonPath('views', 2);
+        $this->flushHeaders();
+        $legacy = $this->getJson('/api.php?nid='.$id)->assertOk()->json('AndroidEbookApp.0');
+        $this->assertArrayNotHasKey('view_count', $legacy);
+        $withViews = $this->getJson('/api.php?nid='.$id.'&include_dates=1&include_views=1')->assertOk()->json('AndroidEbookApp.0');
+        $this->assertSame('2', $withViews['view_count']);
+        $this->assertArrayHasKey('created_at', $withViews);
+    }
+
     public function test_expired_token_and_changed_password_fail_closed(): void
     {
         $token = $this->login();

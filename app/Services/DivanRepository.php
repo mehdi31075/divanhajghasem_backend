@@ -165,7 +165,10 @@ class DivanRepository
         // Keep the exact old Android JSON shape unless the Flutter reader opts in.
         $includeDates = ($query['include_dates'] ?? null) === '1';
         $dateColumns = $includeDates ? ', n.created_at, n.updated_at' : '';
-        $sql = 'SELECT c.cid, c.category_name, c.category_image, c.author, c.status, n.nid, n.news_heading, n.cat_id, n.news_status, n.news_date, n.news_image, n.news_description'.$dateColumns.' FROM tbl_news_category c JOIN tbl_news n ON c.cid = n.cat_id';
+        $includeViews = ($query['include_views'] ?? null) === '1';
+        $viewJoin = $includeViews ? ' LEFT JOIN divan_post_views pv ON pv.post_id = n.nid' : '';
+        $viewColumn = $includeViews ? ', COALESCE(pv.views, 0) AS view_count' : '';
+        $sql = 'SELECT c.cid, c.category_name, c.category_image, c.author, c.status, n.nid, n.news_heading, n.cat_id, n.news_status, n.news_date, n.news_image, n.news_description'.$dateColumns.$viewColumn.' FROM tbl_news_category c JOIN tbl_news n ON c.cid = n.cat_id'.$viewJoin;
         $format = $includeDates ? [$this, 'formatArticleDates'] : null;
         $map = static fn ($rows) => $format ? array_map($format, $rows) : $rows;
         if (isset($query['cat_id'])) {
@@ -217,6 +220,22 @@ class DivanRepository
     public function deleteArticle($id)
     {
         $this->query('DELETE FROM tbl_news WHERE nid = ?', [$id]);
+        $this->query('DELETE FROM divan_post_views WHERE post_id = ?', [$id]);
+    }
+
+    public function incrementArticleViews($id)
+    {
+        $this->query('INSERT INTO divan_post_views (post_id, views) VALUES (?, 1) ON DUPLICATE KEY UPDATE views = views + 1', [$id]);
+        $rows = $this->query('SELECT views FROM divan_post_views WHERE post_id = ?', [$id]);
+
+        return (int) ($rows[0]['views'] ?? 0);
+    }
+
+    public function articleViews($id)
+    {
+        $rows = $this->query('SELECT views FROM divan_post_views WHERE post_id = ?', [$id]);
+
+        return (int) ($rows[0]['views'] ?? 0);
     }
 
     public function mediaName($filename)
@@ -243,9 +262,99 @@ class DivanRepository
         return (int) $rows[0]['total'];
     }
 
-    public function createSupportMessage($receiptHash, $ipHash, $message, $now)
+    public function supportUserByPhone($mobile)
     {
-        $this->query('INSERT INTO divan_support_messages (receipt_hash, source_ip_hash, message, reply, created_at, replied_at) VALUES (?, ?, ?, NULL, ?, NULL)', [$receiptHash, $ipHash, $message, $now]);
+        $rows = $this->query('SELECT id, name, mobile FROM divan_support_users WHERE mobile = ?', [$mobile]);
+
+        return $rows[0] ?? null;
+    }
+
+    public function supportUser($id)
+    {
+        $rows = $this->query('SELECT id, name, mobile FROM divan_support_users WHERE id = ?', [$id]);
+
+        return $rows[0] ?? null;
+    }
+
+    public function supportUsers()
+    {
+        return $this->query('SELECT u.id, u.name, u.mobile, u.created_at, COUNT(m.id) AS support_messages FROM divan_support_users u LEFT JOIN divan_support_messages m ON m.user_id = u.id GROUP BY u.id, u.name, u.mobile, u.created_at ORDER BY u.id DESC LIMIT 1000');
+    }
+
+    public function saveSupportUser($name, $mobile, $now)
+    {
+        $this->query('INSERT INTO divan_support_users (name, mobile, created_at, updated_at) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE name = VALUES(name), updated_at = VALUES(updated_at)', [$name, $mobile, $now, $now]);
+
+        return $this->supportUserByPhone($mobile);
+    }
+
+    public function deleteOldSupportOtps($since)
+    {
+        $this->query('DELETE FROM divan_support_otps WHERE created_at < ?', [$since]);
+    }
+
+    public function supportOtpCountFromIp($ipHash, $since)
+    {
+        $rows = $this->query('SELECT COUNT(*) AS total FROM divan_support_otps WHERE source_ip_hash = ? AND created_at >= ?', [$ipHash, $since]);
+
+        return (int) $rows[0]['total'];
+    }
+
+    public function createSupportOtp($challengeId, $userId, $mobile, $codeHash, $ipHash, $now, $expires)
+    {
+        $this->query('INSERT INTO divan_support_otps (challenge_id, user_id, mobile, code_hash, source_ip_hash, attempts, created_at, expires_at, consumed_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?, NULL)', [$challengeId, $userId, $mobile, $codeHash, $ipHash, $now, $expires]);
+    }
+
+    public function supportOtp($challengeId)
+    {
+        $rows = $this->query('SELECT challenge_id, user_id, mobile, code_hash, attempts, expires_at, consumed_at FROM divan_support_otps WHERE challenge_id = ?', [$challengeId]);
+
+        return $rows[0] ?? null;
+    }
+
+    public function incrementSupportOtpAttempts($challengeId)
+    {
+        $this->query('UPDATE divan_support_otps SET attempts = attempts + 1 WHERE challenge_id = ?', [$challengeId]);
+    }
+
+    public function consumeSupportOtp($challengeId, $now)
+    {
+        $this->query('UPDATE divan_support_otps SET consumed_at = ? WHERE challenge_id = ?', [$now, $challengeId]);
+    }
+
+    public function issueSupportToken($hash, $userId, $now, $expires)
+    {
+        $this->query('DELETE FROM divan_support_tokens WHERE expires_at <= ?', [$now]);
+        $this->query('INSERT INTO divan_support_tokens (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)', [$hash, $userId, $now, $expires]);
+    }
+
+    public function supportToken($hash)
+    {
+        $rows = $this->query('SELECT user_id, expires_at FROM divan_support_tokens WHERE token_hash = ?', [$hash]);
+
+        return $rows[0] ?? null;
+    }
+
+    public function revokeSupportToken($hash)
+    {
+        $this->query('DELETE FROM divan_support_tokens WHERE token_hash = ?', [$hash]);
+    }
+
+    public function supportMessageCountForUser($userId, $since)
+    {
+        $rows = $this->query('SELECT COUNT(*) AS total FROM divan_support_messages WHERE user_id = ? AND created_at >= ?', [$userId, $since]);
+
+        return (int) $rows[0]['total'];
+    }
+
+    public function createSupportMessage($userId, $ipHash, $message, $now)
+    {
+        $this->query('INSERT INTO divan_support_messages (receipt_hash, source_ip_hash, user_id, message, reply, created_at, replied_at) VALUES (NULL, ?, ?, ?, NULL, ?, NULL)', [$ipHash, $userId, $message, $now]);
+    }
+
+    public function supportMessagesForUser($userId)
+    {
+        return $this->query('SELECT id, message, reply, created_at, replied_at FROM divan_support_messages WHERE user_id = ? ORDER BY id DESC LIMIT 100', [$userId]);
     }
 
     public function supportMessage($receiptHash)
@@ -257,7 +366,7 @@ class DivanRepository
 
     public function supportMessages()
     {
-        return $this->query('SELECT id, message, reply, created_at, replied_at FROM divan_support_messages ORDER BY id DESC LIMIT 200');
+        return $this->query('SELECT m.id, m.message, m.reply, m.created_at, m.replied_at, u.name AS user_name, u.mobile AS user_mobile FROM divan_support_messages AS m LEFT JOIN divan_support_users AS u ON u.id = m.user_id ORDER BY m.id DESC LIMIT 200');
     }
 
     public function supportExists($id)

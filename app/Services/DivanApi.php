@@ -86,6 +86,41 @@ class DivanApi
         return bin2hex($bytes);
     }
 
+    private function supportPrincipal($bearer, $now)
+    {
+        if (! is_string($bearer) || ! preg_match('/^[a-f0-9]{64}$/', $bearer)) {
+            throw new ApiError(401, 'support_login_required', 'برای استفاده از پشتیبانی وارد حساب شوید.');
+        }
+        $token = $this->store->supportToken(hash('sha256', $bearer));
+        $user = $token ? $this->store->supportUser($token['user_id']) : null;
+        if (! $token || (int) $token['expires_at'] <= $now || ! $user) {
+            throw new ApiError(401, 'support_login_required', 'ورود منقضی شده است؛ دوباره وارد شوید.');
+        }
+
+        return $user;
+    }
+
+    private function supportMobile($value)
+    {
+        if (! is_string($value)) {
+            throw new ApiError(422, 'invalid_support_mobile', 'شمارهٔ موبایل معتبر وارد کنید.');
+        }
+        $value = strtr(trim($value), [
+            '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4',
+            '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9',
+            '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4',
+            '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
+        ]);
+        $value = preg_replace('/[\s()\-]/u', '', $value);
+        if (preg_match('/^09[0-9]{9}$/', $value)) {
+            return '+98'.substr($value, 1);
+        }
+        if (preg_match('/^\+989[0-9]{9}$/', $value)) {
+            return $value;
+        }
+        throw new ApiError(422, 'invalid_support_mobile', 'شمارهٔ موبایل باید مانند ۰۹۱۲۳۴۵۶۷۸۹ باشد.');
+    }
+
     public function handle($method, $action, $input, $bearer, $ip, $now = null, $files = [])
     {
         $now = $now === null ? time() : $now;
@@ -113,12 +148,20 @@ class DivanApi
 
             return $rows ? ['AndroidEbookApp' => $rows] : [];
         }
-        if (! in_array($action, ['login', 'me', 'logout', 'create', 'update', 'delete', 'stats', 'posts', 'pages', 'page_update', 'account', 'account_update', 'category_create', 'category_update', 'category_delete', 'media_list', 'media_upload', 'media_update', 'media_delete', 'support_create', 'support_check', 'support_list', 'support_reply'], true)) {
+        if (! in_array($action, ['login', 'me', 'logout', 'create', 'update', 'delete', 'stats', 'posts', 'pages', 'page_update', 'account', 'account_update', 'category_create', 'category_update', 'category_delete', 'media_list', 'media_upload', 'media_update', 'media_delete', 'support_start', 'support_verify', 'support_send', 'support_mine', 'support_logout', 'support_list', 'support_reply', 'support_create', 'support_check', 'user_start', 'user_verify', 'user_me', 'user_logout', 'users', 'article_view'], true)) {
             throw new ApiError(404, 'unknown_action', 'این عملیات وجود ندارد.');
         }
-        $requiredMethod = in_array($action, ['me', 'stats', 'posts', 'pages', 'account', 'media_list', 'support_list'], true) ? 'GET' : 'POST';
+        $requiredMethod = in_array($action, ['me', 'stats', 'posts', 'pages', 'account', 'media_list', 'support_list', 'support_mine', 'user_me', 'users'], true) ? 'GET' : 'POST';
         if ($method !== $requiredMethod) {
             throw new ApiError(405, 'method_not_allowed', 'روش درخواست معتبر نیست.');
+        }
+        if ($action === 'article_view') {
+            $id = $this->id($input['nid'] ?? null);
+            if (! $this->store->article($id)) {
+                throw new ApiError(404, 'article_not_found', 'مطلب پیدا نشد.');
+            }
+
+            return ['ok' => true, 'nid' => $id, 'views' => $this->store->incrementArticleViews($id)];
         }
         if ($action === 'login') {
             [$username, $password] = $this->credentials($input);
@@ -137,31 +180,98 @@ class DivanApi
 
             return ['ok' => true, 'access_token' => $token, 'token_type' => 'Bearer', 'expires_in' => $this->ttl, 'username' => $user['Username']];
         }
-        if ($action === 'support_create') {
+        if ($action === 'support_start' || $action === 'user_start') {
+            $name = $input['name'] ?? null;
+            if ($name !== null && (! is_string($name) || trim($name) === '' || ! preg_match('//u', $name) || mb_strlen(trim($name)) > 120)) {
+                throw new ApiError(422, 'invalid_support_name', 'نام را کامل و حداکثر در ۱۲۰ نویسه وارد کنید.');
+            }
+            $mobile = $this->supportMobile($input['mobile'] ?? null);
+            $ipHash = hash('sha256', (string) $ip);
+            $this->store->deleteOldSupportOtps($now - 3600);
+            if ($this->store->supportOtpCountFromIp($ipHash, $now - 3600) >= 10) {
+                throw new ApiError(429, 'support_otp_rate_limited', 'تعداد درخواست کد زیاد است؛ کمی بعد دوباره تلاش کنید.');
+            }
+            $existing = $this->store->supportUserByPhone($mobile);
+            $user = $existing;
+            // Retain the previous support flow for already shipped clients that
+            // still submit the name before requesting their first OTP.
+            if (! $user && is_string($name) && trim($name) !== '') {
+                $user = $this->store->saveSupportUser(trim($name), $mobile, $now);
+            }
+            $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+            $challenge = $this->randomToken();
+            $this->store->createSupportOtp($challenge, $user['id'] ?? null, $mobile, hash('sha256', $code), $ipHash, $now, $now + 300);
+
+            return ['ok' => true, 'challenge_id' => $challenge, 'test_otp' => $code, 'mode' => $existing ? 'login' : 'register', 'expires_in' => 300];
+        }
+        if ($action === 'support_verify' || $action === 'user_verify') {
+            $challenge = $input['challenge_id'] ?? null;
+            $code = $input['otp'] ?? null;
+            if (! is_string($challenge) || ! preg_match('/^[a-f0-9]{64}$/', $challenge) || ! is_string($code)) {
+                throw new ApiError(422, 'invalid_support_otp', 'کد ورود معتبر نیست.');
+            }
+            $code = strtr(trim($code), [
+                '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4',
+                '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9',
+                '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4',
+                '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
+            ]);
+            if (! preg_match('/^[0-9]{6}$/', $code)) {
+                throw new ApiError(422, 'invalid_support_otp', 'کد ورود باید ۶ رقم باشد.');
+            }
+            $otp = $this->store->supportOtp($challenge);
+            if (! $otp || $otp['consumed_at'] !== null || (int) $otp['expires_at'] <= $now || (int) $otp['attempts'] >= 5) {
+                throw new ApiError(401, 'support_otp_expired', 'کد ورود منقضی شده است؛ کد تازه بگیرید.');
+            }
+            $this->store->incrementSupportOtpAttempts($challenge);
+            if (! hash_equals($otp['code_hash'], hash('sha256', $code))) {
+                throw new ApiError(401, 'invalid_support_otp', 'کد ورود درست نیست.');
+            }
+            $userId = $otp['user_id'] ?? null;
+            if (! $userId) {
+                $name = $input['name'] ?? null;
+                if ($name === null) {
+                    return ['ok' => true, 'needs_name' => true, 'mode' => 'register'];
+                }
+                if (! is_string($name) || trim($name) === '' || ! preg_match('//u', $name) || mb_strlen(trim($name)) > 120) {
+                    throw new ApiError(422, 'invalid_support_name', 'نام را کامل و حداکثر در ۱۲۰ نویسه وارد کنید.');
+                }
+                $user = $this->store->saveSupportUser(trim($name), $otp['mobile'], $now);
+                $userId = $user['id'];
+            }
+            $this->store->consumeSupportOtp($challenge, $now);
+            $token = $this->randomToken();
+            $this->store->issueSupportToken(hash('sha256', $token), $userId, $now, $now + 2592000);
+            $user = $this->store->supportUser($userId);
+
+            return ['ok' => true, 'access_token' => $token, 'token_type' => 'Bearer', 'expires_in' => 2592000, 'user' => $user];
+        }
+        if (in_array($action, ['support_send', 'support_mine', 'support_logout', 'user_me', 'user_logout'], true)) {
+            $user = $this->supportPrincipal($bearer, $now);
+            if ($action === 'user_me') {
+                return ['ok' => true, 'user' => $user];
+            }
+            if ($action === 'support_mine') {
+                return ['ok' => true, 'messages' => array_map([$this, 'formatSupportMessage'], $this->store->supportMessagesForUser($user['id']))];
+            }
+            if ($action === 'support_logout' || $action === 'user_logout') {
+                $this->store->revokeSupportToken(hash('sha256', $bearer));
+
+                return ['ok' => true];
+            }
             $message = $input['message'] ?? null;
             if (! is_string($message) || trim($message) === '' || mb_strlen($message) > 3000 || ! preg_match('//u', $message)) {
                 throw new ApiError(422, 'invalid_support_message', 'پیام باید بین ۱ تا ۳۰۰۰ نویسه باشد.');
             }
-            $ipHash = hash('sha256', $ip);
-            if ($this->store->supportCountFromIp($ipHash, $now - 3600) >= 5) {
+            if ($this->store->supportMessageCountForUser($user['id'], $now - 3600) >= 5) {
                 throw new ApiError(429, 'support_rate_limited', 'تعداد پیام‌ها زیاد است؛ یک ساعت دیگر دوباره تلاش کنید.');
             }
-            $receipt = substr($this->randomToken(), 0, 32);
-            $this->store->createSupportMessage(hash('sha256', $receipt), $ipHash, trim($message), $now);
+            $this->store->createSupportMessage($user['id'], hash('sha256', (string) $ip), trim($message), $now);
 
-            return ['ok' => true, 'receipt' => $receipt, 'created_at' => gmdate('Y-m-d\\TH:i:s\\Z', $now)];
+            return ['ok' => true, 'created_at' => gmdate('Y-m-d\\TH:i:s\\Z', $now)];
         }
-        if ($action === 'support_check') {
-            $receipt = $input['receipt'] ?? null;
-            if (! is_string($receipt) || ! preg_match('/^[a-f0-9]{32}$/', $receipt)) {
-                throw new ApiError(422, 'invalid_support_receipt', 'کد پیگیری معتبر نیست.');
-            }
-            $message = $this->store->supportMessage(hash('sha256', $receipt));
-            if (! $message) {
-                throw new ApiError(404, 'support_message_not_found', 'پیامی با این کد پیگیری پیدا نشد.');
-            }
-
-            return ['ok' => true, 'ticket' => $this->formatSupportMessage($message)];
+        if ($action === 'support_create' || $action === 'support_check') {
+            throw new ApiError(410, 'support_receipts_retired', 'برای پیام پشتیبانی وارد حساب خود شوید.');
         }
         $username = $this->principal($bearer, $now);
         if ($action === 'media_list') {
@@ -196,6 +306,14 @@ class DivanApi
         }
         if ($action === 'support_list') {
             return ['ok' => true, 'messages' => array_map([$this, 'formatSupportMessage'], $this->store->supportMessages())];
+        }
+        if ($action === 'users') {
+            return ['ok' => true, 'users' => array_map(static function ($user) {
+                $user['id'] = (string) $user['id'];
+                $user['support_messages'] = (string) $user['support_messages'];
+                $user['created_at'] = gmdate('Y-m-d\\TH:i:s\\Z', (int) $user['created_at']);
+                return $user;
+            }, $this->store->supportUsers())];
         }
         if ($action === 'support_reply') {
             $id = $this->id($input['id'] ?? null);
@@ -368,6 +486,9 @@ class DivanApi
     private function formatSupportMessage($row)
     {
         $row['id'] = (string) $row['id'];
+        if (array_key_exists('user_id', $row)) {
+            unset($row['user_id']);
+        }
         $row['created_at'] = gmdate('Y-m-d\\TH:i:s\\Z', (int) $row['created_at']);
         $row['replied_at'] = $row['replied_at'] === null ? null : gmdate('Y-m-d\\TH:i:s\\Z', (int) $row['replied_at']);
 

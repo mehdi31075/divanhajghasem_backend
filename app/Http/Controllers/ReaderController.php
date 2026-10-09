@@ -23,6 +23,12 @@ class ReaderController extends Controller
             $query[$key] = (string) $value;
             break;
         }
+        if ($request->query('include_views') === '1') {
+            $query['include_views'] = '1';
+        }
+        if ($request->query('include_dates') === '1') {
+            $query['include_dates'] = '1';
+        }
         $rows = $store->articles($query);
         foreach ($rows as &$row) {
             foreach ($row as &$value) {

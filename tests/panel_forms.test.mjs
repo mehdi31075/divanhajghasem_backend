@@ -14,7 +14,7 @@ async function fixture({rich=false}={}){
  const dom=new JSDOM(html,{url:'https://fixture.test/index.php',runScripts:'outside-only'});
  dom.window.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
  dom.window.HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEvent(new dom.window.Event('close'));};
- const state={categories:[{cid:'61',category_name:'دسته اول',category_image:'one.png',author:'نویسنده',status:'1'}],pages:[{slug:"first-talk",title:"سخن اول",html_body:"<p>متن اولیه</p>",revision:1}],posts:[],videos:[],media:[],supportMessages:[{id:'1',message:'پیشنهاد فارسی',reply:null,created_at:'2026-10-09T10:00:00Z',replied_at:null}],mutations:0,expired:false,loseNextResponse:false};
+ const state={categories:[{cid:'61',category_name:'دسته اول',category_image:'one.png',author:'نویسنده',status:'1'}],pages:[{slug:"first-talk",title:"سخن اول",html_body:"<p>متن اولیه</p>",revision:1}],posts:[],videos:[],media:[],users:[{id:'1',name:'کاربر آزمایشی',mobile:'09123456789',created_at:'2026-10-09T10:00:00Z',support_messages:'2'}],supportMessages:[{id:'1',user_name:'کاربر آزمایشی',user_mobile:'09123456789',message:'پیشنهاد فارسی',reply:null,created_at:'2026-10-09T10:00:00Z',replied_at:null}],mutations:0,expired:false,loseNextResponse:false};
  dom.window.confirm=()=>true;dom.window.scrollTo=()=>{};
  dom.window.fetch=async(url,init)=>{
   assert.equal(init.credentials,'omit');const action=url.searchParams.get('action')||'';
@@ -31,6 +31,7 @@ async function fixture({rich=false}={}){
   if(action==='pages')return reply({ok:true,pages:state.pages});
   if(action==='media_list')return reply({ok:true,videos:state.videos,media:state.media.length?state.media:state.videos.map(item=>({...item,type:'video'}))});
   if(action==='support_list')return reply({ok:true,messages:state.supportMessages});
+  if(action==='users')return reply({ok:true,users:state.users});
   if(action==='page_update' && Number(fields.revision)!==state.pages.find(p=>p.slug===fields.slug).revision)return reply({ok:false,message:'صفحه روی سرور تغییر کرده است'},409);
   if(action==='account')return reply({ok:true,account:{Username:'fixture-admin',Email:'fixture@example.test'}});
   state.mutations++;
@@ -113,11 +114,18 @@ test('real CKEditor preserves untouched legacy HTML and sanitizes edited exports
   assert.equal(f.state.posts[0].news_description,original);
   f.click('[data-route="post/9"]');await waitFor(()=>f.doc.querySelector('.ck-editor__editable') && !f.doc.querySelector('#post-form button[type=submit]').disabled);
   const editor=f.state.richEditor;
-  const customIcons=[...f.doc.querySelectorAll('.divan-toolbar-icon')].map(icon=>icon.dataset.divanIcon);
-  assert.ok(customIcons.length>=18,`expected readable custom SVGs for most toolbar actions, got ${customIcons.length}`);
-  for(const icon of ['undo','redo','link','image','imageUrl','table','bold','italic','underline','strike','bullets','numbers','quote','align','color','background'])assert.ok(customIcons.includes(icon),`missing ${icon} toolbar SVG`);
-  assert.ok(f.doc.querySelector('[data-divan-icon="link"]').closest('button').classList.contains('divan-toolbar-control'));
-  assert.equal(f.doc.querySelector('[data-divan-icon="link"]').closest('button').querySelector('.ck-button__label').textContent,'پیوند');
+  const toolbar=f.doc.querySelector('.ck-toolbar__items');
+  const iconButtons=[...toolbar.querySelectorAll('button')].filter(button=>button.querySelector('svg.ck-icon'));
+  assert.ok(iconButtons.length>=18,`expected visible CKEditor SVG icons, got ${iconButtons.length}`);
+  for(const label of ['پیوند','بارگذاری تصویر','جدول','درشت','کج','زیرخط','فهرست']) {
+    const button=[...toolbar.querySelectorAll('button')].find(node=>node.getAttribute('aria-label')===label || node.title===label);
+    assert.ok(button,`missing ${label} toolbar button`);
+    const svg=button.querySelector('svg.ck-icon');assert.ok(svg,`${label} has no SVG icon`);
+    assert.ok(svg.querySelector('path,rect,circle,line,polyline,polygon'),`${label} SVG has no drawable shape`);
+  }
+  const videoButton=f.doc.querySelector('.divan-video-button');
+  assert.ok(videoButton.querySelector('svg path,svg rect'));
+  assert.equal(f.doc.querySelector('.ck-editor__editable').getAttribute('aria-label'),'متن مطلب');
   assert.ok(editor.plugins.has('SourceEditing'));
   assert.ok(editor.plugins.has('Table'));
   assert.ok(editor.plugins.has('ImageInsertViaUrl'));
@@ -169,14 +177,23 @@ test('panel media library lists, renames and deletes uploaded assets',async()=>{
  }finally{f.dom.window.close();}
 });
 
-test('admin can answer an anonymous text support message',async()=>{
+test('admin sees account details and can answer a support message',async()=>{
  const f=await fixture();try{
   await f.login();await waitFor(()=>f.doc.querySelector('nav a[href="#support"]'));
   f.click('nav a[href="#support"]');await waitFor(()=>f.doc.querySelector('[data-support-reply="1"]'));
+  assert.match(f.doc.querySelector('.support-meta').textContent,/کاربر آزمایشی/);assert.match(f.doc.querySelector('.support-meta').textContent,/09123456789/);
   assert.equal(f.doc.querySelector('.support-message').textContent,'پیشنهاد فارسی');
   f.input('[data-support-reply="1"] textarea','پاسخ روشن');f.submit('[data-support-reply="1"]');
   await waitFor(()=>f.state.supportMessages[0].reply==='پاسخ روشن');
  }finally{f.dom.window.close();}
+});
+
+test('admin can review registered app accounts',async()=>{
+  const f=await fixture();await f.login();await waitFor(()=>f.doc.querySelector('nav a[href="#users"]'));
+  f.click('nav a[href="#users"]');await waitFor(()=>f.doc.querySelector('.table-wrap tbody tr'));
+  assert.match(f.doc.querySelector('.table-wrap').textContent,/کاربر آزمایشی/);
+  assert.match(f.doc.querySelector('.table-wrap').textContent,/09123456789/);
+  assert.match(f.doc.querySelector('.table-wrap').textContent,/2/);
 });
 
 test('page editor uses real CKEditor, preserves original HTML and reconciles a lost response',async()=>{
