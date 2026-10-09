@@ -63,8 +63,18 @@ check(strlen($supportToken) === 64 && $supportLogin['user']['mobile'] === '+9891
 check($call('POST', 'support_send', ['message' => 'پیشنهاد فارسی'], $supportToken)['ok'], 'signed-in user can send a support message');
 $myMessages = $call('GET', 'support_mine', [], $supportToken)['messages'];
 check(count($myMessages) === 1 && $myMessages[0]['message'] === 'پیشنهاد فارسی', 'support account retrieves its own messages');
+$ticketId = $myMessages[0]['id'];
+check($call('POST', 'support_reply', ['id' => $ticketId, 'reply' => 'پاسخ اول مدیر'], $token)['ok'], 'admin can reply to support message');
+check($call('POST', 'support_reply', ['id' => $ticketId, 'reply' => 'پاسخ دوم مدیر'], $token)['ok'], 'admin can send multiple replies');
+check($call('POST', 'support_send', ['ticket_id' => $ticketId, 'message' => 'پاسخ کاربر در چت'], $supportToken)['ok'], 'user can reply in ticket conversation');
+$chatMessages = $call('GET', 'support_mine', [], $supportToken)['messages'][0]['replies'];
+check(count($chatMessages) === 3, 'all conversation replies returned in order');
+check($chatMessages[0]['sender'] === 'admin' && $chatMessages[0]['message'] === 'پاسخ اول مدیر', 'first admin reply');
+check($chatMessages[1]['sender'] === 'admin' && $chatMessages[1]['message'] === 'پاسخ دوم مدیر', 'second admin reply');
+check($chatMessages[2]['sender'] === 'user' && $chatMessages[2]['message'] === 'پاسخ کاربر در چت', 'user reply');
 $adminMessages = $call('GET', 'support_list', [], $token)['messages'];
 check($adminMessages[0]['user_name'] === 'کاربر آزمایشی' && $adminMessages[0]['user_mobile'] === '+989123456789', 'admin can identify the support account');
+check(count($adminMessages[0]['replies']) === 3, 'admin sees full conversation replies');
 rejected(function () use ($call, $supportStart) {
     $call('POST', 'support_create', ['message' => 'بدون ورود']);
 }, 410, 'receipt-based public support flow is retired');

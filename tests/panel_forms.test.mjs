@@ -36,8 +36,7 @@ async function fixture({rich=false}={}){
   if(action==='account')return reply({ok:true,account:{Username:'fixture-admin',Email:'fixture@example.test'}});
   state.mutations++;
   if(action==='media_update'){state.media.find(item=>decodeURIComponent(new URL(item.url,'https://fixture.test').pathname.split('/').pop())===fields.id).name=fields.name;return reply({ok:true});}
-  if(action==='media_delete'){state.media=state.media.filter(item=>decodeURIComponent(new URL(item.url,'https://fixture.test').pathname.split('/').pop())!==fields.id);return reply({ok:true});}
-  if(action==='support_reply'){Object.assign(state.supportMessages.find(item=>item.id===fields.id),{reply:fields.reply,replied_at:'2026-10-09T11:00:00Z'});return reply({ok:true});}
+  if(action==='support_reply'){const m=state.supportMessages.find(item=>item.id===fields.id);if(!m.replies)m.replies=[];m.replies.push({id:String(m.replies.length+1),sender:'admin',message:fields.reply,created_at:'2026-10-09T11:00:00Z'});Object.assign(m,{reply:fields.reply,replied_at:'2026-10-09T11:00:00Z'});return reply({ok:true});}
   if(action==='page_update'){const p=state.pages.find(p=>p.slug===fields.slug);Object.assign(p,{title:fields.title,html_body:fields.html_body,revision:p.revision+1});}
   else if(action==='create'){state.posts.push({...fields,nid:String(state.mutations),cat_id:fields.cid});}
   else if(action==='update'){const p=state.posts.find(p=>p.nid===fields.id);Object.assign(p,fields,{cat_id:fields.cid});}
@@ -177,14 +176,21 @@ test('panel media library lists, renames and deletes uploaded assets',async()=>{
  }finally{f.dom.window.close();}
 });
 
-test('admin sees account details and can answer a support message',async()=>{
+test('admin sees support table and clicks to chat view to answer multiple times',async()=>{
  const f=await fixture();try{
   await f.login();await waitFor(()=>f.doc.querySelector('nav a[href="#support"]'));
-  f.click('nav a[href="#support"]');await waitFor(()=>f.doc.querySelector('[data-support-reply="1"]'));
-  assert.match(f.doc.querySelector('.support-meta').textContent,/کاربر آزمایشی/);assert.match(f.doc.querySelector('.support-meta').textContent,/09123456789/);
-  assert.equal(f.doc.querySelector('.support-message').textContent,'پیشنهاد فارسی');
-  f.input('[data-support-reply="1"] textarea','پاسخ روشن');f.submit('[data-support-reply="1"]');
-  await waitFor(()=>f.state.supportMessages[0].reply==='پاسخ روشن');
+  f.click('nav a[href="#support"]');await waitFor(()=>f.doc.querySelector('.support-table tbody tr'));
+  assert.match(f.doc.querySelector('.support-table').textContent,/کاربر آزمایشی/);assert.match(f.doc.querySelector('.support-table').textContent,/09123456789/);
+  assert.ok(f.doc.querySelector('.badge-pending'),'shows pending badge');
+  assert.match(f.doc.querySelector('.support-preview').textContent,/پیشنهاد فارسی/);
+  f.click('.support-row[data-route="support/1"]');await waitFor(()=>f.doc.querySelector('.support-chat'));
+  assert.match(f.doc.querySelector('.support-chat-user').textContent,/کاربر آزمایشی/);
+  assert.match(f.doc.querySelector('.chat-bubble-user').textContent,/پیشنهاد فارسی/);
+  f.input('[data-support-reply="1"] textarea','پاسخ اول روشن');f.submit('[data-support-reply="1"]');
+  await waitFor(()=>f.state.supportMessages[0].reply==='پاسخ اول روشن');
+  await waitFor(()=>f.doc.querySelector('[data-support-reply="1"] textarea'));
+  f.input('[data-support-reply="1"] textarea','پاسخ دوم تکمیلی');f.submit('[data-support-reply="1"]');
+  await waitFor(()=>f.state.supportMessages[0].reply==='پاسخ دوم تکمیلی' && f.state.supportMessages[0].replies?.length===2);
  }finally{f.dom.window.close();}
 });
 

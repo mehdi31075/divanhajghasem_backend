@@ -354,7 +354,8 @@ class DivanRepository
 
     public function supportMessagesForUser($userId)
     {
-        return $this->query('SELECT id, message, reply, created_at, replied_at FROM divan_support_messages WHERE user_id = ? ORDER BY id DESC LIMIT 100', [$userId]);
+        $rows = $this->query('SELECT id, message, reply, created_at, replied_at FROM divan_support_messages WHERE user_id = ? ORDER BY id DESC LIMIT 100', [$userId]);
+        return $this->attachRepliesToTickets($rows);
     }
 
     public function supportMessage($receiptHash)
@@ -364,9 +365,17 @@ class DivanRepository
         return $rows[0] ?? null;
     }
 
+    public function supportMessageById($id)
+    {
+        $rows = $this->query('SELECT id, user_id, message, reply, created_at, replied_at FROM divan_support_messages WHERE id = ?', [$id]);
+
+        return $rows[0] ?? null;
+    }
+
     public function supportMessages()
     {
-        return $this->query('SELECT m.id, m.message, m.reply, m.created_at, m.replied_at, u.name AS user_name, u.mobile AS user_mobile FROM divan_support_messages AS m LEFT JOIN divan_support_users AS u ON u.id = m.user_id ORDER BY m.id DESC LIMIT 200');
+        $rows = $this->query('SELECT m.id, m.message, m.reply, m.created_at, m.replied_at, u.name AS user_name, u.mobile AS user_mobile FROM divan_support_messages AS m LEFT JOIN divan_support_users AS u ON u.id = m.user_id ORDER BY m.id DESC LIMIT 200');
+        return $this->attachRepliesToTickets($rows);
     }
 
     public function supportExists($id)
@@ -374,15 +383,63 @@ class DivanRepository
         return count($this->query('SELECT id FROM divan_support_messages WHERE id = ?', [$id])) === 1;
     }
 
+    public function createSupportReply($ticketId, $sender, $message, $now)
+    {
+        $this->query('INSERT INTO divan_support_replies (ticket_id, sender, message, created_at) VALUES (?, ?, ?, ?)', [$ticketId, $sender, $message, $now]);
+    }
+
+    public function supportRepliesForTickets(array $ticketIds)
+    {
+        $cleanIds = array_values(array_filter(array_map('intval', $ticketIds), static fn ($id) => $id > 0));
+        if (empty($cleanIds)) {
+            return [];
+        }
+        $placeholders = implode(',', array_fill(0, count($cleanIds), '?'));
+
+        try {
+            return $this->query("SELECT id, ticket_id, sender, message, created_at FROM divan_support_replies WHERE ticket_id IN ($placeholders) ORDER BY id ASC", $cleanIds);
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    private function attachRepliesToTickets(array $rows): array
+    {
+        if (empty($rows)) {
+            return [];
+        }
+        $ids = array_column($rows, 'id');
+        $allReplies = $this->supportRepliesForTickets($ids);
+        $grouped = [];
+        foreach ($allReplies as $r) {
+            $grouped[$r['ticket_id']][] = $r;
+        }
+        foreach ($rows as &$row) {
+            $row['replies'] = $grouped[$row['id']] ?? [];
+        }
+        unset($row);
+
+        return $rows;
+    }
+
     public function replyToSupport($id, $reply, $now)
     {
+        if (! $this->supportExists($id)) {
+            return 0;
+        }
+        if ($reply !== null && trim($reply) !== '') {
+            $this->createSupportReply($id, 'admin', trim($reply), $now);
+        }
         $result = $this->query('UPDATE divan_support_messages SET reply = ?, replied_at = ? WHERE id = ?', [$reply, $now, $id]);
 
-        return (int) $result['affected'];
+        return 1;
     }
 
     public function deleteSupportMessage($id)
     {
         $this->query('DELETE FROM divan_support_messages WHERE id = ?', [$id]);
+        try {
+            $this->query('DELETE FROM divan_support_replies WHERE ticket_id = ?', [$id]);
+        } catch (\Throwable) {}
     }
 }

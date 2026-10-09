@@ -298,17 +298,70 @@ async function render(route) {
     const items = result.media || result.videos || [];
     html = `<div class="actions"><h1>کتابخانهٔ رسانه</h1><button type="button" class="primary" id="open-media-library">بارگذاری و مدیریت فایل‌ها</button></div><p class="help">${digits(items.length)} فایل روی هاست؛ نام نمایشی را ویرایش کنید یا فایل را حذف کنید.</p><section class="grid media-library-grid">${items.map(item => {let src;try{src=sameSiteMediaUrl(item.url)}catch{return ''}return `<article class="card media-library-card">${item.type==='video'?`<video controls preload="metadata" src="${e(src)}"></video>`:`<img src="${e(src)}" alt="${e(item.name)}" loading="lazy">`}<strong>${e(item.name)}</strong><small>${item.type==='video'?'ویدیو':'تصویر'} · ${e(displayDate(item.created_at))}</small></article>`}).join('') || '<p class="empty">هنوز رسانه‌ای بارگذاری نشده است.</p>'}</section>`;
     after = () => { $('#open-media-library').onclick = () => mediaLibrary(); };
-  } else if (view === 'support') {
+  } else if (view === 'support' && !id) {
     const result = await api.call('support_list');
-    html = `<div class="actions"><h1>پیام‌های پشتیبانی</h1><span class="category-badge">${digits(result.messages.length)} پیام اخیر</span></div><section class="support-list">${result.messages.map(item => `<article class="card support-card"><div class="support-meta"><strong>پیام ${digits(item.id)} · ${e(item.user_name || 'حساب قدیمی')}</strong><small>${e(item.user_mobile || '')} ${item.user_mobile ? '·' : ''} ${e(displayDate(item.created_at))}</small></div><p class="support-message">${e(item.message)}</p><form class="support-reply-form" data-support-reply="${e(item.id)}"><label>پاسخ شما<textarea name="reply" maxlength="4000" rows="3" placeholder="پاسخ متنی برای کاربر">${e(item.reply || '')}</textarea></label><div class="support-meta"><small>${item.replied_at ? `پاسخ آخر: ${e(displayDate(item.replied_at))}` : 'هنوز پاسخی ثبت نشده'}</small><button class="primary compact" type="submit">ذخیرهٔ پاسخ</button></div><p class="form-message" role="alert"></p></form></article>`).join('') || '<section class="card empty">هنوز پیامی دریافت نشده است.</section>'}</section>`;
+    html = `<div class="actions"><h1>پیام‌های پشتیبانی</h1><span class="category-badge">${digits(result.messages.length)} گفتگو</span></div><section class="card table-wrap"><table class="support-table"><thead><tr><th>کاربر</th><th>شماره</th><th>آخرین پیام</th><th>تاریخ</th><th>وضعیت</th></tr></thead><tbody>${result.messages.map(item => {
+      const replies = item.replies && item.replies.length ? item.replies : (item.reply ? [{sender: 'admin', message: item.reply, created_at: item.replied_at}] : []);
+      const last = replies.length ? replies[replies.length - 1] : {sender: 'user', message: item.message, created_at: item.created_at};
+      const preview = (last.message || '').length > 60 ? (last.message || '').slice(0, 60) + '…' : (last.message || '');
+      const isPending = last.sender === 'user';
+      return `<tr class="support-row" data-route="support/${e(item.id)}" role="button" tabindex="0"><td><strong>${e(item.user_name || 'حساب قدیمی')}</strong></td><td dir="ltr"><small>${e(item.user_mobile || '—')}</small></td><td class="support-preview"><span class="preview-sender">${last.sender === 'user' ? 'کاربر: ' : 'مدیر: '}</span>${e(preview)}</td><td><small>${e(displayDate(last.created_at || item.created_at))}</small></td><td>${isPending ? `<span class="badge-pending">پیام جدید کاربر</span>` : `<span class="badge-replied">پاسخ داده‌شده</span>`}</td></tr>`;
+    }).join('') || ''}</tbody></table>${result.messages.length ? '' : '<p class="empty">هنوز پیامی دریافت نشده است.</p>'}</section>`;
     after = () => {
-      $('#content').addEventListener('input', event => { if (event.target.closest('[data-support-reply]')) state.dirty = true; });
-      $('#content').addEventListener('submit', async event => {
-        const form = event.target.closest('[data-support-reply]'); if (!form) return;
-        event.preventDefault(); const submit = form.querySelector('button[type=submit]'); submit.disabled = true;
-        try { await api.call('support_reply', {method: 'POST', fields: {id: form.dataset.supportReply, reply: form.elements.reply.value}}); state.dirty = false; await render('support'); notice('پاسخ در اپ برای فرستنده ثبت شد.'); }
-        catch (error) { if (error.status === 401) lock(error.message); formMessage(form, error.message); submit.disabled = false; }
-      });
+      for (const row of document.querySelectorAll('.support-row')) {
+        row.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); navigate(row.dataset.route); } });
+      }
+    };
+  } else if (view === 'support' && id) {
+    const result = await api.call('support_list');
+    const item = result.messages.find(m => String(m.id) === String(id));
+    if (!item) throw new ApiError('گفتگوی پشتیبانی پیدا نشد.');
+    const thread = [{sender: 'user', message: item.message, created_at: item.created_at}];
+    if (item.replies && item.replies.length) {
+      for (const r of item.replies) thread.push({sender: r.sender || 'admin', message: r.message, created_at: r.created_at});
+    } else if (item.reply) {
+      thread.push({sender: 'admin', message: item.reply, created_at: item.replied_at || item.created_at});
+    }
+    html = `<div class="actions"><h1>گفتگوی پشتیبانی</h1>${button('بازگشت به فهرست', 'support')}</div><section class="card support-chat"><div class="support-chat-header"><div class="support-chat-user">${icon('user')}<div><strong>${e(item.user_name || 'حساب قدیمی')}</strong><small>${e(item.user_mobile || '—')}</small></div></div><div class="support-chat-actions"><span class="category-badge">${digits(thread.length)} پیام</span><button type="button" class="compact" id="refresh-chat">تازه‌سازی</button></div></div><div class="support-chat-messages" id="chat-messages">${thread.map(msg => `<div class="chat-bubble chat-bubble-${msg.sender === 'user' ? 'user' : 'admin'}"><span class="chat-sender-tag">${msg.sender === 'user' ? (e(item.user_name || 'کاربر')) : 'پشتیبانی دیوان'}</span><p>${e(msg.message)}</p><small>${e(displayDate(msg.created_at))}</small></div>`).join('')}</div><form class="support-reply-form" data-support-reply="${e(item.id)}"><label>پاسخ شما<textarea name="reply" maxlength="4000" rows="3" placeholder="پاسخ تازه برای کاربر بنویسید… (ارسال با دکمه یا Ctrl+Enter)"></textarea></label><div class="support-reply-actions"><p class="form-message" role="alert"></p><button class="primary compact" type="submit">ارسال پاسخ</button></div></form></section>`;
+    after = () => {
+      const messagesBox = $('#chat-messages');
+      if (messagesBox) messagesBox.scrollTop = messagesBox.scrollHeight;
+      const refreshBtn = $('#refresh-chat');
+      if (refreshBtn) refreshBtn.onclick = () => render(`support/${id}`);
+      const form = document.querySelector('[data-support-reply]');
+      const textarea = form?.querySelector('textarea');
+      if (textarea) {
+        textarea.addEventListener('keydown', event => {
+          if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+            event.preventDefault();
+            form.requestSubmit();
+          }
+        });
+      }
+      if (form) {
+        form.addEventListener('input', () => { state.dirty = true; });
+        form.addEventListener('submit', async event => {
+          event.preventDefault();
+          const text = form.elements.reply.value.trim();
+          if (!text) return;
+          const submit = form.querySelector('button[type=submit]');
+          if (submit.disabled) return;
+          submit.disabled = true;
+          if (textarea) textarea.disabled = true;
+          try {
+            await api.call('support_reply', {method: 'POST', fields: {id: form.dataset.supportReply, reply: text}});
+            state.dirty = false;
+            await render(`support/${id}`);
+            notice('پاسخ برای کاربر ثبت شد.');
+          }
+          catch (error) {
+            if (error.status === 401) lock(error.message);
+            formMessage(form, error.message);
+            submit.disabled = false;
+            if (textarea) textarea.disabled = false;
+          }
+        });
+      }
     };
   } else if (view === 'users') {
     const result = await api.call('users');

@@ -16,6 +16,7 @@ Artisan::command('divan:check', function () {
         'divan_support_tokens' => ['token_hash', 'user_id', 'created_at', 'expires_at'],
         'divan_support_messages' => ['user_id', 'message', 'reply', 'created_at', 'replied_at'],
         'divan_post_views' => ['post_id', 'views'],
+        'divan_support_replies' => ['id', 'ticket_id', 'sender', 'message', 'created_at'],
     ];
     foreach ($expected as $table => $columns) {
         if (! Schema::hasTable($table) || ! Schema::hasColumns($table, $columns)) {

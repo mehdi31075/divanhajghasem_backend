@@ -263,7 +263,21 @@ class DivanApi
             if (! is_string($message) || trim($message) === '' || mb_strlen($message) > 3000 || ! preg_match('//u', $message)) {
                 throw new ApiError(422, 'invalid_support_message', 'پیام باید بین ۱ تا ۳۰۰۰ نویسه باشد.');
             }
-            if ($this->store->supportMessageCountForUser($user['id'], $now - 3600) >= 5) {
+            $ticketId = $input['ticket_id'] ?? $input['id'] ?? null;
+            if ($ticketId !== null) {
+                $tid = $this->id($ticketId);
+                $ticket = $this->store->supportMessageById($tid);
+                if (! $ticket || (string) ($ticket['user_id'] ?? '') !== (string) $user['id']) {
+                    throw new ApiError(404, 'support_message_not_found', 'درخواست پشتیبانی پیدا نشد.');
+                }
+                if ($this->store->supportMessageCountForUser($user['id'], $now - 3600) >= 20) {
+                    throw new ApiError(429, 'support_rate_limited', 'تعداد پیام‌ها زیاد است؛ کمی بعد دوباره تلاش کنید.');
+                }
+                $this->store->createSupportReply($tid, 'user', trim($message), $now);
+
+                return ['ok' => true, 'created_at' => gmdate('Y-m-d\\TH:i:s\\Z', $now)];
+            }
+            if ($this->store->supportMessageCountForUser($user['id'], $now - 3600) >= 10) {
                 throw new ApiError(429, 'support_rate_limited', 'تعداد پیام‌ها زیاد است؛ یک ساعت دیگر دوباره تلاش کنید.');
             }
             $this->store->createSupportMessage($user['id'], hash('sha256', (string) $ip), trim($message), $now);
@@ -489,8 +503,36 @@ class DivanApi
         if (array_key_exists('user_id', $row)) {
             unset($row['user_id']);
         }
-        $row['created_at'] = gmdate('Y-m-d\\TH:i:s\\Z', (int) $row['created_at']);
-        $row['replied_at'] = $row['replied_at'] === null ? null : gmdate('Y-m-d\\TH:i:s\\Z', (int) $row['replied_at']);
+        $row['created_at'] = is_numeric($row['created_at'])
+            ? gmdate('Y-m-d\\TH:i:s\\Z', (int) $row['created_at'])
+            : (string) $row['created_at'];
+        $row['replied_at'] = $row['replied_at'] === null
+            ? null
+            : (is_numeric($row['replied_at']) ? gmdate('Y-m-d\\TH:i:s\\Z', (int) $row['replied_at']) : (string) $row['replied_at']);
+
+        $replies = [];
+        if (! empty($row['replies']) && is_array($row['replies'])) {
+            foreach ($row['replies'] as $reply) {
+                $replies[] = [
+                    'id' => (string) ($reply['id'] ?? ''),
+                    'ticket_id' => (string) ($reply['ticket_id'] ?? $row['id']),
+                    'sender' => $reply['sender'] ?? 'admin',
+                    'message' => $reply['message'] ?? '',
+                    'created_at' => is_numeric($reply['created_at'] ?? null)
+                        ? gmdate('Y-m-d\\TH:i:s\\Z', (int) $reply['created_at'])
+                        : (string) ($reply['created_at'] ?? ''),
+                ];
+            }
+        } elseif ($row['reply'] !== null && trim((string) $row['reply']) !== '') {
+            $replies[] = [
+                'id' => 'legacy',
+                'ticket_id' => (string) $row['id'],
+                'sender' => 'admin',
+                'message' => (string) $row['reply'],
+                'created_at' => $row['replied_at'] ?? $row['created_at'],
+            ];
+        }
+        $row['replies'] = $replies;
 
         return $row;
     }

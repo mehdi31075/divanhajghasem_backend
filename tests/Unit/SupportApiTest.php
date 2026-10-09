@@ -112,4 +112,17 @@ final class SupportApiTest extends TestCase
             $this->assertSame(429, $error->status);
         }
     }
+
+    public function test_user_and_admin_can_reply_in_conversation_thread(): void
+    {
+        $now = 1_800_000_000;
+        $store = $this->createMock(DivanRepository::class);
+        $store->method('supportToken')->willReturn(['user_id' => 22, 'expires_at' => $now + 1000]);
+        $store->method('supportUser')->with(22)->willReturn(['id' => 22, 'name' => 'کاربر', 'mobile' => '+989123456789']);
+        $store->method('supportMessageById')->with(12)->willReturn(['id' => 12, 'user_id' => 22, 'message' => 'پیام اول', 'reply' => null, 'created_at' => $now, 'replied_at' => null]);
+        $store->expects($this->once())->method('createSupportReply')->with(12, 'user', 'پاسخ کاربر در چت', $now);
+        $api = new DivanApi($store);
+        $res = $api->handle('POST', 'support_send', ['ticket_id' => '12', 'message' => 'پاسخ کاربر در چت'], str_repeat('a', 64), '127.0.0.1', $now);
+        $this->assertTrue($res['ok']);
+    }
 }
