@@ -385,7 +385,17 @@ class DivanRepository
 
     public function createSupportReply($ticketId, $sender, $message, $now)
     {
-        $this->query('INSERT INTO divan_support_replies (ticket_id, sender, message, created_at) VALUES (?, ?, ?, ?)', [$ticketId, $sender, $message, $now]);
+        $recent = $this->query(
+            'SELECT id FROM divan_support_replies WHERE ticket_id = ? AND sender = ? AND message = ? AND created_at >= ? LIMIT 1',
+            [$ticketId, $sender, $message, $now - 5]
+        );
+        if (! empty($recent)) {
+            return (string) $recent[0]['id'];
+        }
+
+        $result = $this->query('INSERT INTO divan_support_replies (ticket_id, sender, message, created_at) VALUES (?, ?, ?, ?)', [$ticketId, $sender, $message, $now]);
+
+        return (string) ($result['id'] ?? '');
     }
 
     public function supportRepliesForTickets(array $ticketIds)
@@ -441,5 +451,46 @@ class DivanRepository
         try {
             $this->query('DELETE FROM divan_support_replies WHERE ticket_id = ?', [$id]);
         } catch (\Throwable) {}
+    }
+
+    public function supportReplyById($id)
+    {
+        $rows = $this->query('SELECT id, ticket_id, sender, message, created_at FROM divan_support_replies WHERE id = ?', [$id]);
+
+        return $rows[0] ?? null;
+    }
+
+    public function updateSupportReply($id, $message)
+    {
+        $reply = $this->supportReplyById($id);
+        if (! $reply) {
+            return false;
+        }
+        $this->query('UPDATE divan_support_replies SET message = ? WHERE id = ?', [$message, $id]);
+        $this->syncTicketLatestReply($reply['ticket_id']);
+
+        return true;
+    }
+
+    public function deleteSupportReply($id)
+    {
+        $reply = $this->supportReplyById($id);
+        if (! $reply) {
+            return false;
+        }
+        $this->query('DELETE FROM divan_support_replies WHERE id = ?', [$id]);
+        $this->syncTicketLatestReply($reply['ticket_id']);
+
+        return true;
+    }
+
+    public function syncTicketLatestReply($ticketId)
+    {
+        $rows = $this->query('SELECT message, created_at FROM divan_support_replies WHERE ticket_id = ? AND sender = ? ORDER BY id DESC LIMIT 1', [$ticketId, 'admin']);
+        if (! empty($rows)) {
+            $this->query('UPDATE divan_support_messages SET reply = ?, replied_at = ? WHERE id = ?', [$rows[0]['message'], $rows[0]['created_at'], $ticketId]);
+        } else {
+            $this->query('UPDATE divan_support_messages SET reply = NULL, replied_at = NULL WHERE id = ?', [$ticketId]);
+        }
     }
 }

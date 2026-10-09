@@ -125,4 +125,26 @@ final class SupportApiTest extends TestCase
         $res = $api->handle('POST', 'support_send', ['ticket_id' => '12', 'message' => 'پاسخ کاربر در چت'], str_repeat('a', 64), '127.0.0.1', $now);
         $this->assertTrue($res['ok']);
     }
+
+    public function test_admin_can_update_and_delete_reply(): void
+    {
+        $now = 1_800_000_000;
+        $store = $this->createMock(DivanRepository::class);
+        $store->method('token')->willReturn(['username' => 'admin', 'expires_at' => $now + 9999, 'password_digest' => hash('sha256', 'hash')]);
+        $store->method('user')->willReturn(['Username' => 'admin', 'Password' => 'hash']);
+
+        $store->method('supportReplyById')->with(5)->willReturn(['id' => 5, 'ticket_id' => 12, 'sender' => 'admin', 'message' => 'پاسخ اولیه']);
+        $store->expects($this->once())->method('updateSupportReply')->with(5, 'پاسخ ویرایش شده');
+        $store->expects($this->once())->method('deleteSupportReply')->with(5);
+
+        $api = new DivanApi($store);
+        $token = str_repeat('a', 64);
+
+        $updateRes = $api->handle('POST', 'support_reply_update', ['id' => 5, 'message' => 'پاسخ ویرایش شده'], $token, '127.0.0.1', $now);
+        $this->assertTrue($updateRes['ok']);
+
+        $deleteRes = $api->handle('POST', 'support_reply_delete', ['id' => 5], $token, '127.0.0.1', $now);
+        $this->assertTrue($deleteRes['ok']);
+    }
 }
+

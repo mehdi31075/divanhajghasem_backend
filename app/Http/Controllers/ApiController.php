@@ -15,7 +15,7 @@ class ApiController extends Controller
             throw new ApiError(422, 'invalid_action', 'درخواست معتبر نیست.');
         }
 
-        $private = ['me', 'logout', 'stats', 'posts', 'pages', 'page_update', 'account', 'account_update', 'create', 'update', 'delete', 'category_create', 'category_update', 'category_delete', 'media_list', 'media_upload', 'media_update', 'media_delete', 'support_list', 'support_reply', 'users'];
+        $private = ['me', 'logout', 'stats', 'posts', 'pages', 'page_update', 'account', 'account_update', 'create', 'update', 'delete', 'category_create', 'category_update', 'category_delete', 'media_list', 'media_upload', 'media_update', 'media_delete', 'support_list', 'support_reply', 'support_reply_update', 'support_reply_delete', 'users'];
         $requiredMethod = in_array($action, ['me', 'stats', 'posts', 'pages', 'account', 'media_list', 'support_list', 'users'], true) ? 'GET' : 'POST';
         if (in_array($action, $private, true) && $request->method() === $requiredMethod && ! $request->user('divan')) {
             throw new ApiError(401, 'unauthorized', 'ورود منقضی شده است؛ دوباره وارد شوید.');

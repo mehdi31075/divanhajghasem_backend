@@ -1,4 +1,7 @@
 Options -Indexes
+<IfModule mod_headers.c>
+    Header set Access-Control-Allow-Origin "*"
+</IfModule>
 <FilesMatch "(?i)\.(php[0-9]?|phtml|phar|cgi|pl|sh)$">
     <IfModule mod_authz_core.c>
         Require all denied

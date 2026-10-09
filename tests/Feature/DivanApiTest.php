@@ -215,6 +215,10 @@ class DivanApiTest extends TestCase
             ->assertOk()->assertJsonPath('messages.0.message', $message);
         $this->withToken($token)->postJson('/mobile-api.php?action=support_reply', ['id' => '1', 'reply' => 'پاسخ مدیر'])
             ->assertOk();
+        // Duplicate rapid submission with exact same message should not duplicate rows
+        $this->withToken($token)->postJson('/mobile-api.php?action=support_reply', ['id' => '1', 'reply' => 'پاسخ مدیر'])
+            ->assertOk();
+        $this->assertDatabaseCount('divan_support_replies', 1);
         $this->flushHeaders();
         $this->postJson('/mobile-api.php?action=support_check', ['receipt' => $receipt])
             ->assertOk()->assertJsonPath('ticket.reply', 'پاسخ مدیر')->assertJsonPath('ticket.replied_at', fn ($value) => is_string($value));

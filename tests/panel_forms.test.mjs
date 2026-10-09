@@ -15,7 +15,7 @@ async function fixture({rich=false}={}){
  dom.window.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
  dom.window.HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEvent(new dom.window.Event('close'));};
  const state={categories:[{cid:'61',category_name:'دسته اول',category_image:'one.png',author:'نویسنده',status:'1'}],pages:[{slug:"first-talk",title:"سخن اول",html_body:"<p>متن اولیه</p>",revision:1}],posts:[],videos:[],media:[],users:[{id:'1',name:'کاربر آزمایشی',mobile:'09123456789',created_at:'2026-10-09T10:00:00Z',support_messages:'2'}],supportMessages:[{id:'1',user_name:'کاربر آزمایشی',user_mobile:'09123456789',message:'پیشنهاد فارسی',reply:null,created_at:'2026-10-09T10:00:00Z',replied_at:null}],mutations:0,expired:false,loseNextResponse:false};
- dom.window.confirm=()=>true;dom.window.scrollTo=()=>{};
+ dom.window.confirm=()=>true;dom.window.alert=()=>{};dom.window.scrollTo=()=>{};
  dom.window.fetch=async(url,init)=>{
   assert.equal(init.credentials,'omit');const action=url.searchParams.get('action')||'';
   const fields=init.body ? Object.fromEntries(init.body.entries()) : {};
@@ -37,6 +37,8 @@ async function fixture({rich=false}={}){
   state.mutations++;
   if(action==='media_update'){state.media.find(item=>decodeURIComponent(new URL(item.url,'https://fixture.test').pathname.split('/').pop())===fields.id).name=fields.name;return reply({ok:true});}
   if(action==='support_reply'){const m=state.supportMessages.find(item=>item.id===fields.id);if(!m.replies)m.replies=[];m.replies.push({id:String(m.replies.length+1),sender:'admin',message:fields.reply,created_at:'2026-10-09T11:00:00Z'});Object.assign(m,{reply:fields.reply,replied_at:'2026-10-09T11:00:00Z'});return reply({ok:true});}
+  if(action==='support_reply_update'){const m=state.supportMessages.find(item=>item.id===fields.ticket_id);const r=m?.replies?.find(item=>item.id===fields.id);if(r)r.message=fields.message;if(m)m.reply=fields.message;return reply({ok:true});}
+  if(action==='support_reply_delete'){const m=state.supportMessages.find(item=>item.id===fields.ticket_id);if(m?.replies)m.replies=m.replies.filter(item=>item.id!==fields.id);if(m)m.reply=m?.replies?.length?m.replies[m.replies.length-1].message:null;return reply({ok:true});}
   if(action==='page_update'){const p=state.pages.find(p=>p.slug===fields.slug);Object.assign(p,{title:fields.title,html_body:fields.html_body,revision:p.revision+1});}
   else if(action==='create'){state.posts.push({...fields,nid:String(state.mutations),cat_id:fields.cid});}
   else if(action==='update'){const p=state.posts.find(p=>p.nid===fields.id);Object.assign(p,fields,{cat_id:fields.cid});}
@@ -165,6 +167,18 @@ test('post editor inserts an uploaded host video from its media library',async()
  }finally{f.dom.window.close();}
 });
 
+test('post editor inserts an uploaded host image from its media library',async()=>{
+ const f=await fixture({rich:true});try{
+  f.state.media=[{name:'picture.jpg',url:'/upload/news-media/picture.jpg',type:'image',mime_type:'image/jpeg',created_at:'2026-10-09T10:00:00Z'}];
+  await f.login();await waitFor(()=>f.doc.querySelector('[data-route="post-new"]'));
+  f.click('[data-route="post-new"]');await waitFor(()=>f.doc.querySelector('.ck-editor__editable') && !f.doc.querySelector('#post-form button[type=submit]').disabled);
+  const imageAction=f.doc.querySelector('.divan-image-button');assert.ok(imageAction);assert.equal(imageAction.closest('.ck-toolbar__items')!==null,true);assert.equal(imageAction.getAttribute('aria-label'),'بارگذاری و درج تصویر از هاست');
+  f.click('.divan-image-button');await waitFor(()=>f.doc.querySelector('[data-insert-image]'));
+  f.click('[data-insert-image]');await waitFor(()=>!f.doc.querySelector('.media-dialog'));
+  assert.match(f.state.richEditor.getData(),/<img[^>]*src="https:\/\/divanhajghasem\.ir\/upload\/news-media\/picture\.jpg"/);
+ }finally{f.dom.window.close();}
+});
+
 test('panel media library lists, renames and deletes uploaded assets',async()=>{
  const f=await fixture();try{
   f.state.media=[{name:'image.png',url:'/upload/news-media/0123456789abcdef0123456789abcdef-image.png',type:'image',mime_type:'image/png',size_bytes:1200,created_at:'2026-10-09T10:00:00Z'}];
@@ -186,11 +200,20 @@ test('admin sees support table and clicks to chat view to answer multiple times'
   f.click('.support-row[data-route="support/1"]');await waitFor(()=>f.doc.querySelector('.support-chat'));
   assert.match(f.doc.querySelector('.support-chat-user').textContent,/کاربر آزمایشی/);
   assert.match(f.doc.querySelector('.chat-bubble-user').textContent,/پیشنهاد فارسی/);
-  f.input('[data-support-reply="1"] textarea','پاسخ اول روشن');f.submit('[data-support-reply="1"]');
+  f.input('[data-support-reply="1"] textarea','پاسخ اول روشن');
+  f.submit('[data-support-reply="1"]');
+  f.submit('[data-support-reply="1"]');
   await waitFor(()=>f.state.supportMessages[0].reply==='پاسخ اول روشن');
-  await waitFor(()=>f.doc.querySelector('[data-support-reply="1"] textarea'));
+  assert.equal(f.state.supportMessages[0].replies?.length, 1);
+  await waitFor(()=>f.doc.querySelector('[data-support-reply="1"] textarea') && !f.doc.querySelector('[data-support-reply="1"] textarea').disabled);
   f.input('[data-support-reply="1"] textarea','پاسخ دوم تکمیلی');f.submit('[data-support-reply="1"]');
   await waitFor(()=>f.state.supportMessages[0].reply==='پاسخ دوم تکمیلی' && f.state.supportMessages[0].replies?.length===2);
+  f.dom.window.prompt=()=>'پاسخ دوم ویرایش شده';
+  await waitFor(()=>f.doc.querySelector('[data-edit-reply="2"]'));
+  f.click('[data-edit-reply="2"]');
+  await waitFor(()=>f.state.supportMessages[0].reply==='پاسخ دوم ویرایش شده');
+  f.click('[data-delete-reply="2"]');
+  await waitFor(()=>f.state.supportMessages[0].replies?.length===1 && f.state.supportMessages[0].reply==='پاسخ اول روشن');
  }finally{f.dom.window.close();}
 });
 

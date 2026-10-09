@@ -148,7 +148,7 @@ class DivanApi
 
             return $rows ? ['AndroidEbookApp' => $rows] : [];
         }
-        if (! in_array($action, ['login', 'me', 'logout', 'create', 'update', 'delete', 'stats', 'posts', 'pages', 'page_update', 'account', 'account_update', 'category_create', 'category_update', 'category_delete', 'media_list', 'media_upload', 'media_update', 'media_delete', 'support_start', 'support_verify', 'support_send', 'support_mine', 'support_logout', 'support_list', 'support_reply', 'support_create', 'support_check', 'user_start', 'user_verify', 'user_me', 'user_logout', 'users', 'article_view'], true)) {
+        if (! in_array($action, ['login', 'me', 'logout', 'create', 'update', 'delete', 'stats', 'posts', 'pages', 'page_update', 'account', 'account_update', 'category_create', 'category_update', 'category_delete', 'media_list', 'media_upload', 'media_update', 'media_delete', 'support_start', 'support_verify', 'support_send', 'support_mine', 'support_logout', 'support_list', 'support_reply', 'support_reply_update', 'support_reply_delete', 'support_create', 'support_check', 'user_start', 'user_verify', 'user_me', 'user_logout', 'users', 'article_view'], true)) {
             throw new ApiError(404, 'unknown_action', 'این عملیات وجود ندارد.');
         }
         $requiredMethod = in_array($action, ['me', 'stats', 'posts', 'pages', 'account', 'media_list', 'support_list', 'support_mine', 'user_me', 'users'], true) ? 'GET' : 'POST';
@@ -339,6 +339,46 @@ class DivanApi
             if (! $this->store->replyToSupport($id, $reply === '' ? null : $reply, $reply === '' ? null : $now) && ! $this->store->supportExists($id)) {
                 throw new ApiError(404, 'support_message_not_found', 'پیام پشتیبانی پیدا نشد.');
             }
+
+            return ['ok' => true];
+        }
+        if ($action === 'support_reply_update') {
+            $id = $input['id'] ?? null;
+            $ticketId = $input['ticket_id'] ?? null;
+            $message = $input['message'] ?? $input['reply'] ?? null;
+            if (! is_string($message) || trim($message) === '' || mb_strlen($message) > 4000 || ! preg_match('//u', $message)) {
+                throw new ApiError(422, 'invalid_support_reply', 'متن پیام باید بین ۱ تا ۴۰۰۰ نویسه باشد.');
+            }
+            if ($id === 'legacy' && $ticketId) {
+                $tid = $this->id($ticketId);
+                $this->store->replyToSupport($tid, trim($message), $now);
+
+                return ['ok' => true];
+            }
+            $cleanId = $this->id($id);
+            $existing = $this->store->supportReplyById($cleanId);
+            if (! $existing || ($existing['sender'] ?? '') !== 'admin') {
+                throw new ApiError(404, 'reply_not_found', 'پیام پشتیبانی برای ویرایش پیدا نشد.');
+            }
+            $this->store->updateSupportReply($cleanId, trim($message));
+
+            return ['ok' => true];
+        }
+        if ($action === 'support_reply_delete') {
+            $id = $input['id'] ?? null;
+            $ticketId = $input['ticket_id'] ?? null;
+            if ($id === 'legacy' && $ticketId) {
+                $tid = $this->id($ticketId);
+                $this->store->replyToSupport($tid, null, null);
+
+                return ['ok' => true];
+            }
+            $cleanId = $this->id($id);
+            $existing = $this->store->supportReplyById($cleanId);
+            if (! $existing || ($existing['sender'] ?? '') !== 'admin') {
+                throw new ApiError(404, 'reply_not_found', 'پیام پشتیبانی برای حذف پیدا نشد.');
+            }
+            $this->store->deleteSupportReply($cleanId);
 
             return ['ok' => true];
         }
