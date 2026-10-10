@@ -34,7 +34,9 @@ async function fixture({rich=false}={}){
   if(action==='users')return reply({ok:true,users:state.users});
   if(action==='page_update' && Number(fields.revision)!==state.pages.find(p=>p.slug===fields.slug).revision)return reply({ok:false,message:'صفحه روی سرور تغییر کرده است'},409);
   if(action==='account')return reply({ok:true,account:{Username:'fixture-admin',Email:'fixture@example.test'}});
+  if(action==='app_info')return reply({ok:true,app:state.appInfo || {name:'دیوان انصارالحسین(ع)',version:'۰.۱.۰',filename:'divan-ansaralhossein.apk',download_url:'/download/app',size_bytes:59000000,size_human:'۵۹ مگابایت',updated_at:'2026-10-10T01:00:00Z',available:true}});
   state.mutations++;
+  if(action==='app_upload'){state.appUploaded=true;return reply({ok:true,app:{name:'دیوان انصارالحسین(ع)',version:'۰.۱.۰',filename:'divan-ansaralhossein.apk',download_url:'/download/app',size_bytes:60000000,size_human:'۶۰ مگابایت',updated_at:'2026-10-10T02:00:00Z',available:true}});}
   if(action==='media_update'){state.media.find(item=>decodeURIComponent(new URL(item.url,'https://fixture.test').pathname.split('/').pop())===fields.id).name=fields.name;return reply({ok:true});}
   if(action==='support_reply'){const m=state.supportMessages.find(item=>item.id===fields.id);if(!m.replies)m.replies=[];m.replies.push({id:String(m.replies.length+1),sender:'admin',message:fields.reply,created_at:'2026-10-09T11:00:00Z'});Object.assign(m,{reply:fields.reply,replied_at:'2026-10-09T11:00:00Z'});return reply({ok:true});}
   if(action==='support_reply_update'){const m=state.supportMessages.find(item=>item.id===fields.ticket_id);const r=m?.replies?.find(item=>item.id===fields.id);if(r)r.message=fields.message;if(m)m.reply=fields.message;return reply({ok:true});}
@@ -238,4 +240,18 @@ test('page editor uses real CKEditor, preserves original HTML and reconciles a l
   f.submit('#page-form');await waitFor(()=>f.doc.querySelector('#page-form .form-message').textContent.includes('تغییر'));
   assert.equal(f.state.richEditor.getData(),'<p><strong>متن تازه</strong></p>');assert.equal(f.state.richEditor.isReadOnly,false);assert.equal(f.state.pages[0].html_body,'<p>متن اولیه</p>');
  }finally{f.dom.window.close();}
+});
+
+test('admin can access app download card on home and app download page',async()=>{
+  const f=await fixture();try{
+    await f.login();
+    await waitFor(()=>f.doc.querySelector('.app-quick-card'));
+    assert.match(f.doc.querySelector('.app-quick-card').textContent,/دانلود فایل APK/);
+    assert.ok(f.doc.querySelector('.topbar-download'));
+    assert.match(f.doc.querySelector('.topbar-download').getAttribute('href'),/download\/app/);
+    f.click('nav a[href="#app"]');
+    await waitFor(()=>f.doc.querySelector('#app-upload-form'));
+    assert.match(f.doc.querySelector('.app-meta-list').textContent,/divan-ansaralhossein\.apk/);
+    assert.match(f.doc.querySelector('#content').textContent,/دانلود مستقیم APK/);
+  }finally{f.dom.window.close();}
 });

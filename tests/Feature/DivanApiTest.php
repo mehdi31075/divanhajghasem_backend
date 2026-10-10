@@ -302,4 +302,29 @@ class DivanApiTest extends TestCase
         $this->getJson('/api.php?latest_news=501')->assertJsonCount(501, 'AndroidEbookApp');
         $this->getJson('/mobile-api.php?latest_news=501')->assertJsonCount(500, 'AndroidEbookApp');
     }
+
+    public function test_app_download_endpoint_and_app_info(): void
+    {
+        $token = $this->login();
+        $info = $this->withToken($token)->getJson('/mobile-api.php?action=app_info')->assertOk()->json('app');
+        $this->assertSame('دیوان انصارالحسین(ع)', $info['name']);
+        $this->assertSame('divan-ansaralhossein.apk', $info['filename']);
+        $this->assertStringContainsString('/download/app', $info['download_url']);
+
+        $download = $this->get('/download/app');
+        if ($info['available']) {
+            $download->assertOk();
+            $this->assertStringContainsString('application/vnd.android.package-archive', (string) $download->headers->get('Content-Type'));
+        }
+    }
+
+    public function test_app_upload_rejects_non_apk(): void
+    {
+        $token = $this->login();
+        $file = UploadedFile::fake()->create('test.txt', 100);
+        $this->withToken($token)->post('/mobile-api.php?action=app_upload', [
+            'app_apk' => $file,
+        ], ['Accept' => 'application/json'])->assertStatus(422);
+    }
 }
+

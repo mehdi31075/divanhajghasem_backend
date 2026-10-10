@@ -329,6 +329,13 @@ class DivanApi
                 return $user;
             }, $this->store->supportUsers())];
         }
+        if ($action === 'app_info') {
+            return ['ok' => true, 'app' => $this->appInfo()];
+        }
+        if ($action === 'app_upload') {
+            $apk = $files['app_apk'] ?? null;
+            return ['ok' => true, 'app' => $this->uploadAppApk($apk, $now)];
+        }
         if ($action === 'support_reply') {
             $id = $this->id($input['id'] ?? null);
             $reply = $input['reply'] ?? null;
@@ -575,5 +582,68 @@ class DivanApi
         $row['replies'] = $replies;
 
         return $row;
+    }
+
+    public function appCandidates(): array
+    {
+        return [
+            storage_path('app/apk/divan-ansaralhossein.apk'),
+            public_path('download/divan-ansaralhossein.apk'),
+            base_path('../divan-ansaralhossein.apk'),
+            base_path('../build/app/outputs/flutter-apk/app-release.apk'),
+        ];
+    }
+
+    public function appInfo(): array
+    {
+        $existing = null;
+        foreach ($this->appCandidates() as $path) {
+            if (file_exists($path) && is_readable($path)) {
+                $existing = $path;
+                break;
+            }
+        }
+
+        $available = $existing !== null;
+        $sizeBytes = $available ? filesize($existing) : 0;
+        $mtime = $available ? filemtime($existing) : null;
+
+        return [
+            'name' => 'دیوان انصارالحسین(ع)',
+            'version' => '۰.۱.۰',
+            'filename' => 'divan-ansaralhossein.apk',
+            'download_url' => url('/download/app'),
+            'size_bytes' => $sizeBytes,
+            'size_human' => $sizeBytes > 0 ? (round($sizeBytes / (1024 * 1024), 1).' مگابایت') : '—',
+            'updated_at' => $mtime ? gmdate('Y-m-d\\TH:i:s\\Z', $mtime) : null,
+            'available' => $available,
+        ];
+    }
+
+    public function uploadAppApk($file, int $now): array
+    {
+        if (! $file || ! is_object($file) || ! method_exists($file, 'isValid') || ! $file->isValid()) {
+            throw new ApiError(422, 'invalid_app_file', 'فایل بارگذاری‌شده معتبر نیست.');
+        }
+
+        $ext = strtolower($file->getClientOriginalExtension());
+        if ($ext !== 'apk') {
+            throw new ApiError(422, 'invalid_file_type', 'فقط فایل با پسوند apk. مجاز است.');
+        }
+
+        $destDir = storage_path('app/apk');
+        if (! is_dir($destDir)) {
+            mkdir($destDir, 0755, true);
+        }
+
+        $dest = $destDir.DIRECTORY_SEPARATOR.'divan-ansaralhossein.apk';
+        $file->move($destDir, 'divan-ansaralhossein.apk');
+
+        $publicDownloadDir = public_path('download');
+        if (is_dir($publicDownloadDir)) {
+            @copy($dest, $publicDownloadDir.DIRECTORY_SEPARATOR.'divan-ansaralhossein.apk');
+        }
+
+        return $this->appInfo();
     }
 }

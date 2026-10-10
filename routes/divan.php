@@ -17,6 +17,28 @@ Route::middleware(ApiTransport::class)->group(function () {
     Route::match(['GET', 'POST', 'OPTIONS'], '/mobile-api.php', ApiController::class);
 });
 
+$downloadApp = function () {
+    $candidates = [
+        storage_path('app/apk/divan-ansaralhossein.apk'),
+        public_path('download/divan-ansaralhossein.apk'),
+        base_path('../divan-ansaralhossein.apk'),
+        base_path('../build/app/outputs/flutter-apk/app-release.apk'),
+    ];
+    foreach ($candidates as $path) {
+        if (file_exists($path) && is_readable($path)) {
+            return response()->download($path, 'divan-ansaralhossein.apk', [
+                'Content-Type' => 'application/vnd.android.package-archive',
+                'Cache-Control' => 'no-cache, must-revalidate',
+            ]);
+        }
+    }
+    abort(404, 'فایل اپلیکیشن هنوز روی سرور قرار نگرفته است.');
+};
+
+Route::get('/download/app', $downloadApp)->name('app.download');
+Route::get('/download/divan.apk', $downloadApp);
+Route::get('/app.apk', $downloadApp);
+
 $panel = fn () => response()->view('panel')->header('Cache-Control', 'no-store')
     ->header('X-Content-Type-Options', 'nosniff')->header('X-Frame-Options', 'DENY');
 Route::get('/', $panel)->name('panel');

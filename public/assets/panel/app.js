@@ -334,9 +334,16 @@ async function render(route) {
   if (view !== 'logout') await api.call('me');
   let html = ''; let after = null;
   if (view === 'home') {
-    const [data, recent, rows] = await Promise.all([api.call('stats'), api.call('posts', {query: {page: 1}}), categories()]);
+    const [data, recent, rows, appRes] = await Promise.all([
+      api.call('stats'),
+      api.call('posts', {query: {page: 1}}),
+      categories(),
+      api.call('app_info').catch(() => null),
+    ]);
+    const appInfo = appRes?.app;
     html = `<section class="dashboard-hero"><div><span class="section-kicker">فضای مدیریت شما</span><h1>به دیوان خوش آمدید.</h1><p>نوشته‌ای تازه منتشر کنید یا به سراغ نوشته‌های قبلی بروید.</p></div><svg class="hero-mark" aria-hidden="true"><use href="#i-book"/></svg></section>
       <div class="grid stats"><section class="card"><span class="stat-icon">${icon('book')}</span><div><strong>${digits(data.stats.posts)}</strong><small>نوشته در دیوان</small></div></section><section class="card"><span class="stat-icon gold">${icon('grid')}</span><div><strong>${digits(data.stats.categories)}</strong><small>دسته‌بندی</small></div></section></div>
+      <section class="card app-quick-card"><div class="app-quick-info"><span class="stat-icon">${icon('download')}</span><div><strong>دریافت آخرین نسخهٔ اپلیکیشن اندروید (APK)</strong><small>${appInfo?.available ? `نسخه ${e(appInfo.version)} · حجم: ${digits(appInfo.size_human)}${appInfo.updated_at ? ` · آخرین به‌روزرسانی: ${e(displayDate(appInfo.updated_at))}` : ''}` : 'فایل آماده دانلود است'}</small></div></div><div class="app-quick-actions"><a class="button primary compact" href="${e(appInfo?.download_url || '/download/app')}" target="_blank" download>${icon('download')} دانلود فایل APK</a>${button('جزئیات و مدیریت', 'app')}</div></section>
       <div class="dashboard-columns"><section><div class="section-heading"><h2>تازه‌ترین نوشته‌ها</h2>${button('همهٔ نوشته‌ها', 'posts')}</div><div class="card">${recent.posts.slice(0,5).map(p => `<div class="recent-row"><span class="mini-book">${icon('book')}</span><div><strong>${e(p.news_heading)}</strong><small>${e(p.news_date)}</small></div>${button('مطالعه', `read/${p.nid}`)}</div>`).join('') || '<p class="empty">اولین نوشتهٔ دیوان را منتشر کنید.</p>'}<div class="actions" style="margin:20px 0 0">${button('نوشتن مطلب جدید', 'post-new')}</div></div></section><section><div class="section-heading"><h2>دسته‌بندی‌ها</h2>${button('مدیریت دسته‌ها', 'categories')}</div><div class="card">${rows.slice(0,4).map(c => {const src = imageUrl(c.category_image, api.endpoint);return `<a class="mini-category" href="#posts/category_id=${e(c.cid)}" data-route="posts/category_id=${e(c.cid)}">${src ? `<img src="${e(src)}" alt="" loading="lazy">` : icon('grid')}<div><strong>${e(c.category_name)}</strong><small>${e(c.author)}</small></div></a>`;}).join('') || '<p class="empty">دسته‌بندی‌ای ثبت نشده است.</p>'}</div></section></div>`;
   } else if (view === 'posts') {
     await categories();
@@ -530,6 +537,54 @@ async function render(route) {
         async target => (await api.call('pages')).pages.some(p => p.slug === target.slug && p.title === target.title && p.html_body === target.html_body && p.revision === Number(target.revision) + 1),
         () => render('pages'));
     };
+  } else if (view === 'app') {
+    const result = await api.call('app_info');
+    const app = result?.app || {};
+    html = `<div class="actions"><h1>دانلود و مدیریت اپلیکیشن اندروید</h1><a class="button primary compact" href="${e(app.download_url || '/download/app')}" target="_blank" download>${icon('download')} دریافت فایل APK</a></div><p class="help">نسخهٔ رسمی اندروید اپلیکیشن دیوان انصارالحسین(ع). لینک مستقیم را برای کاربران ارسال کنید یا فایل جدید را مستقیماً بارگذاری نمایید.</p><div class="grid app-detail-grid"><section class="card"><h2>مشخصات آخرین نسخه</h2><div class="app-meta-list"><div class="app-meta-row"><span>نام برنامه:</span><strong>${e(app.name || 'دیوان انصارالحسین(ع)')}</strong></div><div class="app-meta-row"><span>نسخه:</span><strong>${e(app.version || '—')}</strong></div><div class="app-meta-row"><span>نام فایل:</span><code>${e(app.filename || 'divan-ansaralhossein.apk')}</code></div><div class="app-meta-row"><span>حجم فایل:</span><strong>${digits(app.size_human || '—')}</strong></div><div class="app-meta-row"><span>آخرین به‌روزرسانی:</span><strong>${e(displayDate(app.updated_at))}</strong></div><div class="app-meta-row"><span>وضعیت فایل:</span><span class="${app.available ? 'badge-replied' : 'badge-pending'}">${app.available ? 'آماده برای دانلود' : 'فایل یافت نشد'}</span></div></div><div class="actions" style="margin-top:16px"><a class="button primary compact" href="${e(app.download_url || '/download/app')}" target="_blank" download>${icon('download')} دانلود مستقیم APK</a><button type="button" id="copy-download-link">کپی لینک دانلود</button></div></section><section class="card form-card"><h2>بارگذاری نسخهٔ جدید APK</h2><p class="help">با بارگذاری فایل جدید با پسوند apk.، نسخه قبلی جایگزین می‌شود و کاربران همیشه جدیدترین فایل را دریافت خواهند کرد.</p><form id="app-upload-form"><label>انتخاب فایل APK جدید<input name="app_apk" type="file" accept=".apk,application/vnd.android.package-archive" required></label><p class="form-message" role="alert"></p><button class="primary" type="submit">بارگذاری و ثبت در سرور</button></form></section></div>`;
+    after = () => {
+      const copyBtn = $('#copy-download-link');
+      if (copyBtn) {
+        copyBtn.onclick = async () => {
+          const downloadUrl = new URL(app.download_url || '/download/app', window.location.href).href;
+          try {
+            await navigator.clipboard.writeText(downloadUrl);
+            notice('لینک مستقیم دانلود در حافظه کپی شد.');
+          } catch {
+            window.prompt('لینک مستقیم دانلود:', downloadUrl);
+          }
+        };
+      }
+      const form = $('#app-upload-form');
+      if (form) {
+        form.addEventListener('submit', async event => {
+          event.preventDefault();
+          const fileInput = form.elements.namedItem('app_apk');
+          const file = fileInput?.files?.[0];
+          if (!file) return;
+          const submit = form.querySelector('button[type=submit]');
+          if (submit && submit.disabled) return;
+          if (submit) {
+            submit.disabled = true;
+            submit.textContent = 'در حال بارگذاری فایل APK…';
+          }
+          formMessage(form, 'در حال ارسال فایل APK به سرور…', false);
+          try {
+            const formData = new FormData(form);
+            await api.call('app_upload', {method: 'POST', fields: formData});
+            notice('نسخهٔ جدید اپلیکیشن با موفقیت بارگذاری و جایگزین شد.');
+            await render('app');
+          } catch (error) {
+            if (error.status === 401) lock(error.message);
+            formMessage(form, error.message);
+          } finally {
+            if (submit) {
+              submit.disabled = false;
+              submit.textContent = 'بارگذاری و ثبت در سرور';
+            }
+          }
+        });
+      }
+    };
   } else if (view === 'account') {
     const data = (await api.call('account')).account;
     html = `<h1>حساب مدیر</h1><form id="account-form" class="card form-card"><p>نام کاربری: ${e(data.Username)}</p><label>ایمیل<input name="email" type="email" maxlength="100" required dir="ltr" value="${e(data.Email)}"></label><details><summary>تغییر رمز ورود</summary><label>رمز فعلی<input name="old_password" type="password" autocomplete="current-password"></label><label>رمز جدید<input name="new_password" type="password" autocomplete="new-password"></label><label>تکرار رمز جدید<input name="confirm_password" type="password" autocomplete="new-password"></label><p class="help">بعد از تغییر رمز، در پنل و اپ دوباره وارد شوید.</p></details><p class="form-message" role="alert"></p><button class="primary" type="submit">ذخیره مشخصات</button></form>`;
@@ -585,7 +640,7 @@ document.addEventListener('click', event => {
 });
 window.addEventListener('beforeunload', event => { if (state.dirty || state.pending) { event.preventDefault(); event.returnValue = ''; } });
 function initialRoute() {
-  const old = {'dashboard.php': 'home', 'story.php': 'posts', 'category.php': 'categories', 'admin.php': 'account', 'setting.php': 'account', 'add-menu.php': 'post-new', 'edit-menu.php': 'post', 'delete-menu.php': 'post', 'menu-detail.php': 'read', 'add-category.php': 'category-new', 'edit-category.php': 'category', 'delete-category.php': 'category', 'logout.php': 'logout'};
+  const old = {'dashboard.php': 'home', 'story.php': 'posts', 'category.php': 'categories', 'admin.php': 'account', 'setting.php': 'account', 'add-menu.php': 'post-new', 'edit-menu.php': 'post', 'delete-menu.php': 'post', 'menu-detail.php': 'read', 'add-category.php': 'category-new', 'edit-category.php': 'category', 'delete-category.php': 'category', 'app.php': 'app', 'download.php': 'app', 'logout.php': 'logout'};
   const name = location.pathname.split('/').pop(); const id = new URLSearchParams(location.search).get('id');
   const view = old[name] || 'home'; return location.hash.slice(1) || view + (id && /^[1-9][0-9]*$/.test(id) ? `/${id}` : '');
 }

@@ -4,14 +4,14 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="divan-api" content="{{ url('/mobile-api.php') }}">
   <meta name="theme-color" content="#153f37">
-  <title>دیوان · مدیریت محتوا</title>
+  <title>دیوان انصارالحسین(ع) · مدیریت محتوا</title>
   <link rel="icon" href="{{ asset('assets/panel/mark.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ asset('assets/ckeditor/ckeditor5.css') }}">
-  <link rel="stylesheet" href="{{ asset('assets/panel/panel.css') }}?v=20261009-media-lib-v1">
+  <link rel="stylesheet" href="{{ asset('assets/panel/panel.css') }}?v=20261010-app-dl-v1">
   <script src="{{ asset('assets/purify/purify.min.js') }}" defer></script>
   <script src="{{ asset('assets/ckeditor/ckeditor5.umd.js') }}" defer></script>
   <script src="{{ asset('assets/ckeditor/fa.umd.js') }}" defer></script>
-  <script type="module" src="{{ asset('assets/panel/app.js') }}?v=20261009-media-lib-v1"></script>
+  <script type="module" src="{{ asset('assets/panel/app.js') }}?v=20261010-app-dl-v1"></script>
 </head>
 <body>
   <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
@@ -25,11 +25,12 @@
     <symbol id="i-media" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></symbol>
     <symbol id="i-support" viewBox="0 0 24 24"><path d="M4 5h16v12H8l-4 4z"/><path d="M8 9h8m-8 4h5"/></symbol>
     <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21v-2a7 7 0 0 1 14 0v2M16 4a4 4 0 0 1 0 8m2 3a6 6 0 0 1 4 6"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v12m0 0 5-5m-5 5-5-5M4 20h16"/></symbol>
   </defs></svg>
   <main id="login" class="login-layout">
     <section class="login-brand" aria-label="دیوان">
       <a class="wordmark" href="{{ url('/') }}"><span class="brand-icon"><svg><use href="#i-book"/></svg></span><span>دیوان<span class="brand-caption">خانهٔ واژه‌ها</span></span></a>
-      <div class="brand-story"><span class="eyebrow">دیوان حاج قاسم</span><h1>هر واژه،<br>روایتی ماندگار.</h1><p>جایی برای نگهداری و انتشار نوشته‌ها،<br>و رساندن آن‌ها به دست خوانندگان.</p><div class="book-art" aria-hidden="true"><span></span><span></span><span></span><span></span></div></div>
+      <div class="brand-story"><span class="eyebrow">دیوان انصارالحسین(ع)</span><h1>هر واژه،<br>روایتی ماندگار.</h1><p>جایی برای نگهداری و انتشار نوشته‌ها،<br>و رساندن آن‌ها به دست خوانندگان.</p><div class="book-art" aria-hidden="true"><span></span><span></span><span></span><span></span></div></div>
       <small class="brand-foot">مدیریت نوشته‌ها و دسته‌بندی‌ها</small>
     </section>
     <section class="login-side"><div class="login-card">
@@ -53,11 +54,12 @@
         <a href="#media"><svg><use href="#i-media"/></svg><span>کتابخانهٔ رسانه</span></a>
         <a href="#support"><svg><use href="#i-support"/></svg><span>پشتیبانی</span></a>
         <a href="#users"><svg><use href="#i-users"/></svg><span>کاربران اپ</span></a>
+        <a href="#app"><svg><use href="#i-download"/></svg><span>دانلود اپلیکیشن</span></a>
         <a href="#account"><svg><use href="#i-user"/></svg><span>حساب مدیر</span></a>
       </nav>
       <div class="sidebar-foot"><span class="avatar"><svg><use href="#i-user"/></svg></span><div><strong id="identity"></strong><small>مدیر دیوان</small></div><button id="logout" type="button" aria-label="خروج از حساب" title="خروج"><svg><use href="#i-logout"/></svg></button></div>
     </aside>
-    <div class="workspace"><header class="topbar"><div><span class="section-kicker">دیوان حاج قاسم</span><strong>فضایی برای نوشته‌های ماندگار</strong></div><button class="primary compact" type="button" data-route="post-new"><svg><use href="#i-plus"/></svg>نوشتهٔ جدید</button></header>
+    <div class="workspace"><header class="topbar"><div><span class="section-kicker">دیوان انصارالحسین(ع)</span><strong>فضایی برای نوشته‌های ماندگار</strong></div><div class="topbar-actions"><a class="topbar-download" href="{{ url('/download/app') }}" target="_blank" download title="دانلود مستقیم فایل APK آخرین نسخه"><svg><use href="#i-download"/></svg><span>دانلود اپ (APK)</span></a><button class="primary compact" type="button" data-route="post-new"><svg><use href="#i-plus"/></svg>نوشتهٔ جدید</button></div></header>
       <main class="main-content"><p id="notice" role="status" aria-live="polite"></p><div id="content" aria-busy="false"></div><footer class="page-footer">دیوان <span>·</span> مدیریت نوشته‌ها</footer></main>
     </div>
   </div>

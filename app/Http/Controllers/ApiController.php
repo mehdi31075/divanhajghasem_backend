@@ -15,18 +15,19 @@ class ApiController extends Controller
             throw new ApiError(422, 'invalid_action', 'درخواست معتبر نیست.');
         }
 
-        $private = ['me', 'logout', 'stats', 'posts', 'pages', 'page_update', 'account', 'account_update', 'create', 'update', 'delete', 'category_create', 'category_update', 'category_delete', 'media_list', 'media_upload', 'media_update', 'media_delete', 'support_list', 'support_reply', 'support_reply_update', 'support_reply_delete', 'users'];
-        $requiredMethod = in_array($action, ['me', 'stats', 'posts', 'pages', 'account', 'media_list', 'support_list', 'users'], true) ? 'GET' : 'POST';
+        $private = ['me', 'logout', 'stats', 'posts', 'pages', 'page_update', 'account', 'account_update', 'create', 'update', 'delete', 'category_create', 'category_update', 'category_delete', 'media_list', 'media_upload', 'media_update', 'media_delete', 'support_list', 'support_reply', 'support_reply_update', 'support_reply_delete', 'users', 'app_info', 'app_upload'];
+        $requiredMethod = in_array($action, ['me', 'stats', 'posts', 'pages', 'account', 'media_list', 'support_list', 'users', 'app_info'], true) ? 'GET' : 'POST';
         if (in_array($action, $private, true) && $request->method() === $requiredMethod && ! $request->user('divan')) {
             throw new ApiError(401, 'unauthorized', 'ورود منقضی شده است؛ دوباره وارد شوید.');
         }
 
         return response()->json($api->handle(
-            $request->method(), $action, $request->except(['category_image', 'media_file']),
+            $request->method(), $action, $request->except(['category_image', 'media_file', 'app_apk']),
             $request->bearerToken(), $request->ip(), null,
             array_filter([
                 'category_image' => $request->file('category_image'),
                 'media_file' => $request->file('media_file'),
+                'app_apk' => $request->file('app_apk'),
             ]),
         ));
     }
