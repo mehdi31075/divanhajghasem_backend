@@ -148,10 +148,10 @@ class DivanApi
 
             return $rows ? ['AndroidEbookApp' => $rows] : [];
         }
-        if (! in_array($action, ['login', 'me', 'logout', 'create', 'update', 'delete', 'stats', 'posts', 'pages', 'page_update', 'account', 'account_update', 'category_create', 'category_update', 'category_delete', 'media_list', 'media_upload', 'media_update', 'media_delete', 'support_start', 'support_verify', 'support_send', 'support_mine', 'support_logout', 'support_list', 'support_reply', 'support_reply_update', 'support_reply_delete', 'support_create', 'support_check', 'user_start', 'user_verify', 'user_me', 'user_logout', 'users', 'article_view'], true)) {
+        if (! in_array($action, ['login', 'me', 'logout', 'create', 'update', 'delete', 'stats', 'posts', 'pages', 'page_update', 'account', 'account_update', 'category_create', 'category_update', 'category_delete', 'media_list', 'media_upload', 'media_update', 'media_delete', 'support_start', 'support_verify', 'support_send', 'support_mine', 'support_logout', 'support_list', 'support_reply', 'support_reply_update', 'support_reply_delete', 'support_create', 'support_check', 'user_start', 'user_verify', 'user_me', 'user_logout', 'users', 'article_view', 'app_info', 'app_releases', 'app_upload', 'app_set_latest', 'app_delete'], true)) {
             throw new ApiError(404, 'unknown_action', 'این عملیات وجود ندارد.');
         }
-        $requiredMethod = in_array($action, ['me', 'stats', 'posts', 'pages', 'account', 'media_list', 'support_list', 'support_mine', 'user_me', 'users'], true) ? 'GET' : 'POST';
+        $requiredMethod = in_array($action, ['me', 'stats', 'posts', 'pages', 'account', 'media_list', 'support_list', 'support_mine', 'user_me', 'users', 'app_info', 'app_releases'], true) ? 'GET' : 'POST';
         if ($method !== $requiredMethod) {
             throw new ApiError(405, 'method_not_allowed', 'روش درخواست معتبر نیست.');
         }
@@ -329,12 +329,23 @@ class DivanApi
                 return $user;
             }, $this->store->supportUsers())];
         }
-        if ($action === 'app_info') {
-            return ['ok' => true, 'app' => $this->appInfo()];
+        if ($action === 'app_info' || $action === 'app_releases') {
+            return ['ok' => true, 'releases' => $this->appReleases(), 'latest' => $this->latestRelease()];
         }
         if ($action === 'app_upload') {
             $apk = $files['app_apk'] ?? null;
-            return ['ok' => true, 'app' => $this->uploadAppApk($apk, $now)];
+            $version = $input['version'] ?? null;
+            $changelog = $input['changelog'] ?? null;
+            $isLatest = isset($input['is_latest']) ? filter_var($input['is_latest'], FILTER_VALIDATE_BOOLEAN) : true;
+            return ['ok' => true, 'releases' => $this->uploadAppRelease($apk, $version, $changelog, $isLatest, $now), 'latest' => $this->latestRelease()];
+        }
+        if ($action === 'app_set_latest') {
+            $id = (int) ($input['id'] ?? 0);
+            return ['ok' => true, 'releases' => $this->setLatestAppRelease($id), 'latest' => $this->latestRelease()];
+        }
+        if ($action === 'app_delete') {
+            $id = (int) ($input['id'] ?? 0);
+            return ['ok' => true, 'releases' => $this->deleteAppRelease($id), 'latest' => $this->latestRelease()];
         }
         if ($action === 'support_reply') {
             $id = $this->id($input['id'] ?? null);
@@ -594,33 +605,47 @@ class DivanApi
         ];
     }
 
-    public function appInfo(): array
+    public function appReleases(): array
     {
-        $existing = null;
-        foreach ($this->appCandidates() as $path) {
-            if (file_exists($path) && is_readable($path)) {
-                $existing = $path;
-                break;
-            }
-        }
-
-        $available = $existing !== null;
-        $sizeBytes = $available ? filesize($existing) : 0;
-        $mtime = $available ? filemtime($existing) : null;
-
-        return [
-            'name' => 'دیوان انصارالحسین(ع)',
-            'version' => '۰.۱.۰',
-            'filename' => 'divan-ansaralhossein.apk',
-            'download_url' => url('/download/app'),
-            'size_bytes' => $sizeBytes,
-            'size_human' => $sizeBytes > 0 ? (round($sizeBytes / (1024 * 1024), 1).' مگابایت') : '—',
-            'updated_at' => $mtime ? gmdate('Y-m-d\\TH:i:s\\Z', $mtime) : null,
-            'available' => $available,
-        ];
+        return array_map([$this, 'formatRelease'], $this->store->appReleases());
     }
 
-    public function uploadAppApk($file, int $now): array
+    public function latestRelease(): ?array
+    {
+        $row = $this->store->latestAppRelease();
+
+        return $row ? $this->formatRelease($row) : null;
+    }
+
+    public function releaseById(int $id): ?array
+    {
+        $row = $this->store->appReleaseById($id);
+
+        return $row ? $this->formatRelease($row) : null;
+    }
+
+    public function releaseByVersion(string $version): ?array
+    {
+        $row = $this->store->appReleaseByVersion($version);
+
+        return $row ? $this->formatRelease($row) : null;
+    }
+
+    public function setLatestAppRelease(int $id): array
+    {
+        $this->store->setLatestAppRelease($id);
+
+        return $this->appReleases();
+    }
+
+    public function deleteAppRelease(int $id): array
+    {
+        $this->store->deleteAppRelease($id);
+
+        return $this->appReleases();
+    }
+
+    public function uploadAppRelease($file, ?string $version, ?string $changelog, bool $isLatest, int $now): array
     {
         if (! $file || ! is_object($file) || ! method_exists($file, 'isValid') || ! $file->isValid()) {
             throw new ApiError(422, 'invalid_app_file', 'فایل بارگذاری‌شده معتبر نیست.');
@@ -631,19 +656,87 @@ class DivanApi
             throw new ApiError(422, 'invalid_file_type', 'فقط فایل با پسوند apk. مجاز است.');
         }
 
+        $cleanVersion = trim((string) $version);
+        $cleanVersion = $this->toEnglishDigits($cleanVersion);
+        if ($cleanVersion === '') {
+            $count = count($this->store->appReleases());
+            $cleanVersion = '1.0.'.($count + 1);
+        }
+        $cleanVersion = preg_replace('/[^0-9a-zA-Z._-]/', '', $cleanVersion);
+        if ($cleanVersion === '') {
+            $cleanVersion = '1.0.0';
+        }
+
+        $filename = 'divan-ansaralhossein-v'.$cleanVersion.'.apk';
         $destDir = storage_path('app/apk');
         if (! is_dir($destDir)) {
             mkdir($destDir, 0755, true);
         }
 
-        $dest = $destDir.DIRECTORY_SEPARATOR.'divan-ansaralhossein.apk';
-        $file->move($destDir, 'divan-ansaralhossein.apk');
+        $dest = $destDir.DIRECTORY_SEPARATOR.$filename;
+        $file->move($destDir, $filename);
 
-        $publicDownloadDir = public_path('download');
-        if (is_dir($publicDownloadDir)) {
-            @copy($dest, $publicDownloadDir.DIRECTORY_SEPARATOR.'divan-ansaralhossein.apk');
+        if ($isLatest) {
+            $stdDest = $destDir.DIRECTORY_SEPARATOR.'divan-ansaralhossein.apk';
+            @copy($dest, $stdDest);
+            $publicDownloadDir = public_path('download');
+            if (is_dir($publicDownloadDir)) {
+                @copy($dest, $publicDownloadDir.DIRECTORY_SEPARATOR.'divan-ansaralhossein.apk');
+            }
         }
 
-        return $this->appInfo();
+        $this->store->createAppRelease([
+            'version' => $cleanVersion,
+            'build_number' => 1,
+            'filename' => $filename,
+            'file_path' => $dest,
+            'size_bytes' => filesize($dest),
+            'changelog' => trim((string) $changelog),
+            'is_latest' => $isLatest ? 1 : 0,
+            'created_at' => $now,
+        ]);
+
+        return $this->appReleases();
+    }
+
+    public function formatRelease(array $row): array
+    {
+        $id = (string) $row['id'];
+        $version = (string) $row['version'];
+        $sizeBytes = (int) ($row['size_bytes'] ?? 0);
+        $sizeHuman = $sizeBytes > 0 ? (round($sizeBytes / (1024 * 1024), 1).' مگابایت') : '—';
+        $mtime = (int) ($row['created_at'] ?? 0);
+        $filename = $row['filename'] ?? 'divan-ansaralhossein.apk';
+
+        return [
+            'id' => $id,
+            'version' => $this->toPersianDigits($version),
+            'version_raw' => $version,
+            'build_number' => (int) ($row['build_number'] ?? 1),
+            'filename' => $filename,
+            'file_path' => $row['file_path'] ?? '',
+            'download_url' => url('/download/app?id='.$id),
+            'size_bytes' => $sizeBytes,
+            'size_human' => $sizeHuman,
+            'changelog' => $row['changelog'] ?? '',
+            'is_latest' => (bool) ($row['is_latest'] ?? false),
+            'created_at' => $mtime ? gmdate('Y-m-d\\TH:i:s\\Z', $mtime) : null,
+        ];
+    }
+
+    public function toPersianDigits(string $str): string
+    {
+        $en = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+        $fa = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+
+        return str_replace($en, $fa, $str);
+    }
+
+    public function toEnglishDigits(string $str): string
+    {
+        $fa = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹', '٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+        $en = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+
+        return str_replace($fa, $en, $str);
     }
 }

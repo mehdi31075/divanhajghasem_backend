@@ -338,12 +338,12 @@ async function render(route) {
       api.call('stats'),
       api.call('posts', {query: {page: 1}}),
       categories(),
-      api.call('app_info').catch(() => null),
+      api.call('app_releases').catch(() => null),
     ]);
-    const appInfo = appRes?.app;
+    const latest = appRes?.latest || appRes?.releases?.[0] || null;
     html = `<section class="dashboard-hero"><div><span class="section-kicker">فضای مدیریت شما</span><h1>به دیوان خوش آمدید.</h1><p>نوشته‌ای تازه منتشر کنید یا به سراغ نوشته‌های قبلی بروید.</p></div><svg class="hero-mark" aria-hidden="true"><use href="#i-book"/></svg></section>
       <div class="grid stats"><section class="card"><span class="stat-icon">${icon('book')}</span><div><strong>${digits(data.stats.posts)}</strong><small>نوشته در دیوان</small></div></section><section class="card"><span class="stat-icon gold">${icon('grid')}</span><div><strong>${digits(data.stats.categories)}</strong><small>دسته‌بندی</small></div></section></div>
-      <section class="card app-quick-card"><div class="app-quick-info"><span class="stat-icon">${icon('download')}</span><div><strong>دریافت آخرین نسخهٔ اپلیکیشن اندروید (APK)</strong><small>${appInfo?.available ? `نسخه ${e(appInfo.version)} · حجم: ${digits(appInfo.size_human)}${appInfo.updated_at ? ` · آخرین به‌روزرسانی: ${e(displayDate(appInfo.updated_at))}` : ''}` : 'فایل آماده دانلود است'}</small></div></div><div class="app-quick-actions"><a class="button primary compact" href="${e(appInfo?.download_url || '/download/app')}" target="_blank" download>${icon('download')} دانلود فایل APK</a>${button('جزئیات و مدیریت', 'app')}</div></section>
+      <section class="card app-quick-card"><div class="app-quick-info"><span class="stat-icon">${icon('download')}</span><div><strong>دریافت آخرین نسخهٔ اپلیکیشن اندروید (APK)</strong><small>${latest ? `نسخه ${e(latest.version)} · حجم: ${digits(latest.size_human)}${latest.created_at ? ` · آخرین به‌روزرسانی: ${e(displayDate(latest.created_at))}` : ''}` : 'فایل آماده دانلود است'}</small></div></div><div class="app-quick-actions"><a class="button primary compact" href="${e(latest?.download_url || '/download/app.apk')}" download="${e(latest?.filename || 'divan-ansaralhossein.apk')}">${icon('download')} دانلود فایل APK</a>${button('جدول نسخه‌ها و مدیریت', 'app')}</div></section>
       <div class="dashboard-columns"><section><div class="section-heading"><h2>تازه‌ترین نوشته‌ها</h2>${button('همهٔ نوشته‌ها', 'posts')}</div><div class="card">${recent.posts.slice(0,5).map(p => `<div class="recent-row"><span class="mini-book">${icon('book')}</span><div><strong>${e(p.news_heading)}</strong><small>${e(p.news_date)}</small></div>${button('مطالعه', `read/${p.nid}`)}</div>`).join('') || '<p class="empty">اولین نوشتهٔ دیوان را منتشر کنید.</p>'}<div class="actions" style="margin:20px 0 0">${button('نوشتن مطلب جدید', 'post-new')}</div></div></section><section><div class="section-heading"><h2>دسته‌بندی‌ها</h2>${button('مدیریت دسته‌ها', 'categories')}</div><div class="card">${rows.slice(0,4).map(c => {const src = imageUrl(c.category_image, api.endpoint);return `<a class="mini-category" href="#posts/category_id=${e(c.cid)}" data-route="posts/category_id=${e(c.cid)}">${src ? `<img src="${e(src)}" alt="" loading="lazy">` : icon('grid')}<div><strong>${e(c.category_name)}</strong><small>${e(c.author)}</small></div></a>`;}).join('') || '<p class="empty">دسته‌بندی‌ای ثبت نشده است.</p>'}</div></section></div>`;
   } else if (view === 'posts') {
     await categories();
@@ -538,19 +538,134 @@ async function render(route) {
         () => render('pages'));
     };
   } else if (view === 'app') {
-    const result = await api.call('app_info');
-    const app = result?.app || {};
-    html = `<div class="actions"><h1>دانلود و مدیریت اپلیکیشن اندروید</h1><a class="button primary compact" href="${e(app.download_url || '/download/app')}" target="_blank" download>${icon('download')} دریافت فایل APK</a></div><p class="help">نسخهٔ رسمی اندروید اپلیکیشن دیوان انصارالحسین(ع). لینک مستقیم را برای کاربران ارسال کنید یا فایل جدید را مستقیماً بارگذاری نمایید.</p><div class="grid app-detail-grid"><section class="card"><h2>مشخصات آخرین نسخه</h2><div class="app-meta-list"><div class="app-meta-row"><span>نام برنامه:</span><strong>${e(app.name || 'دیوان انصارالحسین(ع)')}</strong></div><div class="app-meta-row"><span>نسخه:</span><strong>${e(app.version || '—')}</strong></div><div class="app-meta-row"><span>نام فایل:</span><code>${e(app.filename || 'divan-ansaralhossein.apk')}</code></div><div class="app-meta-row"><span>حجم فایل:</span><strong>${digits(app.size_human || '—')}</strong></div><div class="app-meta-row"><span>آخرین به‌روزرسانی:</span><strong>${e(displayDate(app.updated_at))}</strong></div><div class="app-meta-row"><span>وضعیت فایل:</span><span class="${app.available ? 'badge-replied' : 'badge-pending'}">${app.available ? 'آماده برای دانلود' : 'فایل یافت نشد'}</span></div></div><div class="actions" style="margin-top:16px"><a class="button primary compact" href="${e(app.download_url || '/download/app')}" target="_blank" download>${icon('download')} دانلود مستقیم APK</a><button type="button" id="copy-download-link">کپی لینک دانلود</button></div></section><section class="card form-card"><h2>بارگذاری نسخهٔ جدید APK</h2><p class="help">با بارگذاری فایل جدید با پسوند apk.، نسخه قبلی جایگزین می‌شود و کاربران همیشه جدیدترین فایل را دریافت خواهند کرد.</p><form id="app-upload-form"><label>انتخاب فایل APK جدید<input name="app_apk" type="file" accept=".apk,application/vnd.android.package-archive" required></label><p class="form-message" role="alert"></p><button class="primary" type="submit">بارگذاری و ثبت در سرور</button></form></section></div>`;
+    const result = await api.call('app_releases');
+    const releases = result?.releases || [];
+    const latest = result?.latest || releases.find(r => r.is_latest) || releases[0] || null;
+    html = `
+      <div class="actions">
+        <h1>مدیریت و نسخه‌های اپلیکیشن اندروید</h1>
+        ${latest ? `<a class="button primary compact" href="${e(latest.download_url)}" download="${e(latest.filename)}">${icon('download')} دریافت آخرین نسخه (APK)</a>` : ''}
+      </div>
+      <p class="help">فهرست کامل نسخه‌های منتشرشدهٔ اپلیکیشن دیوان انصارالحسین(ع). می‌توانید نسخه‌های مختلف را در جدول مشاهده و مستقیماً دانلود کنید، یا نسخهٔ جدید بارگذاری نمایید.</p>
+
+      ${latest ? `
+      <section class="card app-quick-card">
+        <div class="app-quick-info">
+          <span class="stat-icon">${icon('download')}</span>
+          <div>
+            <strong>آخرین نسخهٔ فعال: نسخه ${e(latest.version)}</strong>
+            <small>حجم فایل: ${digits(latest.size_human)} · تاریخ انتشار: ${e(displayDate(latest.created_at))}${latest.changelog ? ` · تغییرات: ${e(latest.changelog)}` : ''}</small>
+          </div>
+        </div>
+        <div class="app-quick-actions">
+          <a class="button primary compact" href="${e(latest.download_url)}" download="${e(latest.filename)}">${icon('download')} دانلود مستقیم APK</a>
+          <button type="button" id="copy-latest-link">کپی لینک دانلود</button>
+        </div>
+      </section>
+      ` : ''}
+
+      <div class="grid app-detail-grid">
+        <section class="card table-wrap" style="grid-column: 1 / -1">
+          <div class="section-heading" style="margin-top:0">
+            <h2>جدول نسخه‌های اپلیکیشن</h2>
+            <span class="category-badge">${digits(releases.length)} نسخه</span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>نسخه</th>
+                <th>نام فایل</th>
+                <th>حجم</th>
+                <th>تاریخ انتشار</th>
+                <th>توضیحات و تغییرات</th>
+                <th>وضعیت</th>
+                <th>عملیات</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${releases.map(r => `
+                <tr class="${r.is_latest ? 'row-active' : ''}">
+                  <td><strong>نسخه ${e(r.version)}</strong></td>
+                  <td dir="ltr"><code>${e(r.filename)}</code></td>
+                  <td><strong>${digits(r.size_human)}</strong></td>
+                  <td><small>${e(displayDate(r.created_at))}</small></td>
+                  <td><span class="app-changelog" title="${e(r.changelog || '')}">${e(r.changelog || '—')}</span></td>
+                  <td>${r.is_latest ? '<span class="badge-replied">نسخهٔ فعال</span>' : '<span class="category-badge">آرشیو</span>'}</td>
+                  <td>
+                    <div class="actions" style="margin:0;flex-wrap:nowrap;gap:6px">
+                      <a class="button compact" href="${e(r.download_url)}" download="${e(r.filename)}" title="دانلود فایل APK">${icon('download')} دانلود APK</a>
+                      ${!r.is_latest ? `<button type="button" class="compact" data-set-latest="${e(r.id)}">فعال‌سازی</button>` : ''}
+                      <button type="button" class="compact danger" data-delete-release="${e(r.id)}" data-version="${e(r.version)}">حذف</button>
+                    </div>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          ${releases.length ? '' : '<p class="empty">هنوز هیچ نسخه‌ای ثبت نشده است. از فرم زیر نسخهٔ اول را بارگذاری کنید.</p>'}
+        </section>
+
+        <section class="card form-card" style="grid-column: 1 / -1; max-width: 700px">
+          <h2>بارگذاری نسخهٔ جدید اپلیکیشن (APK)</h2>
+          <p class="help">فایل APK را انتخاب کنید و شماره نسخه و تغییرات آن را ثبت فرمایید.</p>
+          <form id="app-upload-form">
+            <label>شماره نسخه (مثلاً ۱.۰.۱ یا 1.0.1)
+              <input name="version" required placeholder="مثال: 1.0.1" maxlength="30">
+            </label>
+            <label>توضیحات و تغییرات این نسخه
+              <textarea name="changelog" rows="3" style="min-height:80px" placeholder="توضیح کوتاه درباره تغییرات این نسخه…"></textarea>
+            </label>
+            <label>انتخاب فایل APK جدید
+              <input name="app_apk" type="file" accept=".apk,application/vnd.android.package-archive" required>
+            </label>
+            <label style="display:flex;align-items:center;gap:10px;margin-bottom:16px;cursor:pointer">
+              <input name="is_latest" type="checkbox" checked style="width:auto;min-height:auto">
+              <span>تنظیم به عنوان آخرین نسخهٔ فعال (لینک دانلود اصلی به این نسخه اشاره خواهد کرد)</span>
+            </label>
+            <p class="form-message" role="alert"></p>
+            <button class="primary" type="submit">بارگذاری و ثبت نسخه</button>
+          </form>
+        </section>
+      </div>
+    `;
     after = () => {
-      const copyBtn = $('#copy-download-link');
+      const copyBtn = $('#copy-latest-link');
       if (copyBtn) {
         copyBtn.onclick = async () => {
-          const downloadUrl = new URL(app.download_url || '/download/app', window.location.href).href;
+          const downloadUrl = new URL(latest?.download_url || '/download/app.apk', window.location.href).href;
           try {
             await navigator.clipboard.writeText(downloadUrl);
             notice('لینک مستقیم دانلود در حافظه کپی شد.');
           } catch {
-            window.prompt('لینک مستقیم دانلود:', downloadUrl);
+            window.prompt('لینک دانلود:', downloadUrl);
+          }
+        };
+      }
+      for (const btn of document.querySelectorAll('[data-set-latest]')) {
+        btn.onclick = async () => {
+          btn.disabled = true;
+          try {
+            await api.call('app_set_latest', {method: 'POST', fields: {id: btn.dataset.setLatest}});
+            notice('نسخه به عنوان آخرین نسخهٔ فعال تنظیم شد.');
+            await render('app');
+          } catch (error) {
+            notice(error.message, true);
+            btn.disabled = false;
+          }
+        };
+      }
+      for (const btn of document.querySelectorAll('[data-delete-release]')) {
+        btn.onclick = async () => {
+          const ver = btn.dataset.version;
+          if (!window.confirm(`آیا از حذف نسخه «${ver}» اطمینان دارید؟`)) return;
+          btn.disabled = true;
+          try {
+            await api.call('app_delete', {method: 'POST', fields: {id: btn.dataset.deleteRelease}});
+            notice(`نسخه «${ver}» حذف شد.`);
+            await render('app');
+          } catch (error) {
+            notice(error.message, true);
+            btn.disabled = false;
           }
         };
       }
@@ -571,7 +686,7 @@ async function render(route) {
           try {
             const formData = new FormData(form);
             await api.call('app_upload', {method: 'POST', fields: formData});
-            notice('نسخهٔ جدید اپلیکیشن با موفقیت بارگذاری و جایگزین شد.');
+            notice('نسخهٔ جدید اپلیکیشن با موفقیت در جدول ثبت شد.');
             await render('app');
           } catch (error) {
             if (error.status === 401) lock(error.message);
@@ -579,7 +694,7 @@ async function render(route) {
           } finally {
             if (submit) {
               submit.disabled = false;
-              submit.textContent = 'بارگذاری و ثبت در سرور';
+              submit.textContent = 'بارگذاری و ثبت نسخه';
             }
           }
         });

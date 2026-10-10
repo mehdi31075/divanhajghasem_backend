@@ -493,4 +493,179 @@ class DivanRepository
             $this->query('UPDATE divan_support_messages SET reply = NULL, replied_at = NULL WHERE id = ?', [$ticketId]);
         }
     }
+
+    public function ensureAppReleasesTable(): void
+    {
+        try {
+            if (! \Illuminate\Support\Facades\Schema::hasTable('divan_app_releases')) {
+                \Illuminate\Support\Facades\Schema::create('divan_app_releases', function (\Illuminate\Database\Schema\Blueprint $table) {
+                    $table->bigIncrements('id');
+                    $table->string('version', 50);
+                    $table->unsignedInteger('build_number')->default(1);
+                    $table->string('filename', 255);
+                    $table->string('file_path', 500);
+                    $table->unsignedBigInteger('size_bytes')->default(0);
+                    $table->text('changelog')->nullable();
+                    $table->boolean('is_latest')->default(false)->index();
+                    $table->unsignedInteger('created_at')->index();
+                    $table->charset = 'utf8mb4';
+                    $table->collation = 'utf8mb4_unicode_ci';
+                });
+            }
+        } catch (\Throwable) {}
+    }
+
+    public function appReleases(): array
+    {
+        $this->ensureAppReleasesTable();
+        $rows = [];
+        try {
+            $rows = $this->query('SELECT id, version, build_number, filename, file_path, size_bytes, changelog, is_latest, created_at FROM divan_app_releases ORDER BY is_latest DESC, created_at DESC, id DESC');
+        } catch (\Throwable) {
+            $rows = [];
+        }
+
+        if (empty($rows)) {
+            $candidates = [
+                storage_path('app/apk/divan-ansaralhossein.apk'),
+                public_path('download/divan-ansaralhossein.apk'),
+                base_path('../divan-ansaralhossein.apk'),
+                base_path('../build/app/outputs/flutter-apk/app-release.apk'),
+            ];
+            foreach ($candidates as $path) {
+                if (file_exists($path) && is_readable($path)) {
+                    $destDir = storage_path('app/apk');
+                    if (! is_dir($destDir)) {
+                        @mkdir($destDir, 0755, true);
+                    }
+                    $versionedPath = $destDir.DIRECTORY_SEPARATOR.'divan-ansaralhossein-v0.1.0.apk';
+                    if (! file_exists($versionedPath)) {
+                        @copy($path, $versionedPath);
+                    }
+                    $this->createAppRelease([
+                        'version' => '0.1.0',
+                        'build_number' => 1,
+                        'filename' => 'divan-ansaralhossein-v0.1.0.apk',
+                        'file_path' => file_exists($versionedPath) ? $versionedPath : $path,
+                        'size_bytes' => filesize($path),
+                        'changelog' => 'نسخهٔ اولیه اپلیکیشن دیوان انصارالحسین(ع)',
+                        'is_latest' => 1,
+                        'created_at' => filemtime($path) ?: time(),
+                    ]);
+                    try {
+                        $rows = $this->query('SELECT id, version, build_number, filename, file_path, size_bytes, changelog, is_latest, created_at FROM divan_app_releases ORDER BY is_latest DESC, created_at DESC, id DESC');
+                    } catch (\Throwable) {}
+                    break;
+                }
+            }
+        }
+
+        return $rows;
+    }
+
+    public function appReleaseById(int $id): ?array
+    {
+        $this->ensureAppReleasesTable();
+        try {
+            $rows = $this->query('SELECT id, version, build_number, filename, file_path, size_bytes, changelog, is_latest, created_at FROM divan_app_releases WHERE id = ?', [$id]);
+            return $rows[0] ?? null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    public function appReleaseByVersion(string $version): ?array
+    {
+        $this->ensureAppReleasesTable();
+        try {
+            $rows = $this->query('SELECT id, version, build_number, filename, file_path, size_bytes, changelog, is_latest, created_at FROM divan_app_releases WHERE version = ? LIMIT 1', [$version]);
+            return $rows[0] ?? null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    public function latestAppRelease(): ?array
+    {
+        $this->ensureAppReleasesTable();
+        try {
+            $rows = $this->query('SELECT id, version, build_number, filename, file_path, size_bytes, changelog, is_latest, created_at FROM divan_app_releases WHERE is_latest = 1 ORDER BY created_at DESC LIMIT 1');
+            if (! empty($rows)) {
+                return $rows[0];
+            }
+            $all = $this->appReleases();
+            return $all[0] ?? null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    public function createAppRelease(array $data): array
+    {
+        $this->ensureAppReleasesTable();
+        $isLatest = ! empty($data['is_latest']) ? 1 : 0;
+        if ($isLatest) {
+            try {
+                $this->query('UPDATE divan_app_releases SET is_latest = 0');
+            } catch (\Throwable) {}
+        }
+        $result = $this->query(
+            'INSERT INTO divan_app_releases (version, build_number, filename, file_path, size_bytes, changelog, is_latest, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+                $data['version'],
+                (int) ($data['build_number'] ?? 1),
+                $data['filename'],
+                $data['file_path'],
+                (int) ($data['size_bytes'] ?? 0),
+                $data['changelog'] ?? '',
+                $isLatest,
+                (int) ($data['created_at'] ?? time()),
+            ]
+        );
+        $newId = (int) $result['id'];
+        return $this->appReleaseById($newId) ?? array_merge($data, ['id' => $newId]);
+    }
+
+    public function setLatestAppRelease(int $id): bool
+    {
+        $this->ensureAppReleasesTable();
+        $release = $this->appReleaseById($id);
+        if (! $release) {
+            return false;
+        }
+        $this->query('UPDATE divan_app_releases SET is_latest = 0');
+        $this->query('UPDATE divan_app_releases SET is_latest = 1 WHERE id = ?', [$id]);
+
+        if (! empty($release['file_path']) && file_exists($release['file_path'])) {
+            $dest = storage_path('app/apk/divan-ansaralhossein.apk');
+            @copy($release['file_path'], $dest);
+            $publicDest = public_path('download/divan-ansaralhossein.apk');
+            if (is_dir(public_path('download'))) {
+                @copy($release['file_path'], $publicDest);
+            }
+        }
+        return true;
+    }
+
+    public function deleteAppRelease(int $id): bool
+    {
+        $this->ensureAppReleasesTable();
+        $release = $this->appReleaseById($id);
+        if (! $release) {
+            return false;
+        }
+        if (! empty($release['file_path']) && file_exists($release['file_path'])) {
+            @unlink($release['file_path']);
+        }
+        $this->query('DELETE FROM divan_app_releases WHERE id = ?', [$id]);
+
+        if (! empty($release['is_latest'])) {
+            $remaining = $this->query('SELECT id FROM divan_app_releases ORDER BY created_at DESC LIMIT 1');
+            if (! empty($remaining)) {
+                $this->setLatestAppRelease((int) $remaining[0]['id']);
+            }
+        }
+        return true;
+    }
 }
+

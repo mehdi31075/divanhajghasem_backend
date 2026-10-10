@@ -54,12 +54,12 @@
         <a href="#media"><svg><use href="#i-media"/></svg><span>کتابخانهٔ رسانه</span></a>
         <a href="#support"><svg><use href="#i-support"/></svg><span>پشتیبانی</span></a>
         <a href="#users"><svg><use href="#i-users"/></svg><span>کاربران اپ</span></a>
-        <a href="#app"><svg><use href="#i-download"/></svg><span>دانلود اپلیکیشن</span></a>
+        <a href="#app"><svg><use href="#i-download"/></svg><span>نسخه‌های اپلیکیشن</span></a>
         <a href="#account"><svg><use href="#i-user"/></svg><span>حساب مدیر</span></a>
       </nav>
       <div class="sidebar-foot"><span class="avatar"><svg><use href="#i-user"/></svg></span><div><strong id="identity"></strong><small>مدیر دیوان</small></div><button id="logout" type="button" aria-label="خروج از حساب" title="خروج"><svg><use href="#i-logout"/></svg></button></div>
     </aside>
-    <div class="workspace"><header class="topbar"><div><span class="section-kicker">دیوان انصارالحسین(ع)</span><strong>فضایی برای نوشته‌های ماندگار</strong></div><div class="topbar-actions"><a class="topbar-download" href="{{ url('/download/app') }}" target="_blank" download title="دانلود مستقیم فایل APK آخرین نسخه"><svg><use href="#i-download"/></svg><span>دانلود اپ (APK)</span></a><button class="primary compact" type="button" data-route="post-new"><svg><use href="#i-plus"/></svg>نوشتهٔ جدید</button></div></header>
+    <div class="workspace"><header class="topbar"><div><span class="section-kicker">دیوان انصارالحسین(ع)</span><strong>فضایی برای نوشته‌های ماندگار</strong></div><div class="topbar-actions"><a class="topbar-download" href="{{ url('/download/app.apk') }}" target="_blank" download="divan-ansaralhossein.apk" title="دانلود مستقیم فایل APK آخرین نسخه"><svg><use href="#i-download"/></svg><span>دانلود اپ (APK)</span></a><button class="primary compact" type="button" data-route="post-new"><svg><use href="#i-plus"/></svg>نوشتهٔ جدید</button></div></header>
       <main class="main-content"><p id="notice" role="status" aria-live="polite"></p><div id="content" aria-busy="false"></div><footer class="page-footer">دیوان <span>·</span> مدیریت نوشته‌ها</footer></main>
     </div>
   </div>

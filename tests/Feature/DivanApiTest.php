@@ -306,16 +306,14 @@ class DivanApiTest extends TestCase
     public function test_app_download_endpoint_and_app_info(): void
     {
         $token = $this->login();
-        $info = $this->withToken($token)->getJson('/mobile-api.php?action=app_info')->assertOk()->json('app');
-        $this->assertSame('دیوان انصارالحسین(ع)', $info['name']);
-        $this->assertSame('divan-ansaralhossein.apk', $info['filename']);
-        $this->assertStringContainsString('/download/app', $info['download_url']);
+        $res = $this->withToken($token)->getJson('/mobile-api.php?action=app_releases')->assertOk()->json();
+        $this->assertArrayHasKey('releases', $res);
+        $this->assertArrayHasKey('latest', $res);
 
-        $download = $this->get('/download/app');
-        if ($info['available']) {
-            $download->assertOk();
-            $this->assertStringContainsString('application/vnd.android.package-archive', (string) $download->headers->get('Content-Type'));
-        }
+        $download = $this->get('/download/app.apk');
+        $download->assertOk();
+        $this->assertStringContainsString('application/vnd.android.package-archive', (string) $download->headers->get('Content-Type'));
+        $this->assertStringContainsString('attachment;', (string) $download->headers->get('Content-Disposition'));
     }
 
     public function test_app_upload_rejects_non_apk(): void
