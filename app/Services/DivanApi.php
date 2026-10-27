@@ -148,7 +148,7 @@ class DivanApi
 
             return $rows ? ['AndroidEbookApp' => $rows] : [];
         }
-        if (! in_array($action, ['login', 'me', 'logout', 'create', 'update', 'delete', 'stats', 'posts', 'pages', 'page_update', 'account', 'account_update', 'category_create', 'category_update', 'category_delete', 'media_list', 'media_upload', 'media_update', 'media_delete', 'support_start', 'support_verify', 'support_send', 'support_mine', 'support_logout', 'support_list', 'support_reply', 'support_reply_update', 'support_reply_delete', 'support_create', 'support_check', 'user_start', 'user_verify', 'user_me', 'user_logout', 'users', 'article_view', 'app_info', 'app_releases', 'app_upload', 'app_set_latest', 'app_delete'], true)) {
+        if (! in_array($action, ['login', 'me', 'logout', 'create', 'update', 'delete', 'stats', 'posts', 'pages', 'page_update', 'account', 'account_update', 'category_create', 'category_update', 'category_delete', 'media_list', 'media_upload', 'media_update', 'media_delete', 'support_start', 'support_verify', 'support_send', 'support_mine', 'support_logout', 'support_list', 'support_reply', 'support_reply_update', 'support_reply_delete', 'support_create', 'support_check', 'user_start', 'user_verify', 'user_me', 'user_logout', 'users', 'article_view', 'app_info', 'app_releases', 'app_upload', 'app_set_latest', 'app_delete', 'app_scan'], true)) {
             throw new ApiError(404, 'unknown_action', 'این عملیات وجود ندارد.');
         }
         $requiredMethod = in_array($action, ['me', 'stats', 'posts', 'pages', 'account', 'media_list', 'support_list', 'support_mine', 'user_me', 'users', 'app_info', 'app_releases'], true) ? 'GET' : 'POST';
@@ -346,6 +346,9 @@ class DivanApi
         if ($action === 'app_delete') {
             $id = (int) ($input['id'] ?? 0);
             return ['ok' => true, 'releases' => $this->deleteAppRelease($id), 'latest' => $this->latestRelease()];
+        }
+        if ($action === 'app_scan') {
+            return ['ok' => true, 'releases' => $this->scanHostApks(), 'latest' => $this->latestRelease()];
         }
         if ($action === 'support_reply') {
             $id = $this->id($input['id'] ?? null);
@@ -605,6 +608,31 @@ class DivanApi
         ];
     }
 
+    public function appDownload(?int $id = null, ?string $version = null): ?array
+    {
+        $release = $id ? $this->releaseById($id) : null;
+        if (! $release && $version) {
+            $release = $this->releaseByVersion($version);
+        }
+        if (! $release) {
+            $release = $this->latestRelease();
+        }
+
+        if ($release && ! empty($release['file_path']) && is_file($release['file_path']) && is_readable($release['file_path'])) {
+            $filename = ! empty($release['filename']) ? basename($release['filename']) : 'divan-ansaralhossein.apk';
+
+            return ['path' => $release['file_path'], 'filename' => str_ends_with(strtolower($filename), '.apk') ? $filename : $filename.'.apk'];
+        }
+
+        foreach ($this->appCandidates() as $path) {
+            if (is_file($path) && is_readable($path)) {
+                return ['path' => $path, 'filename' => 'divan-ansaralhossein.apk'];
+            }
+        }
+
+        return null;
+    }
+
     public function appReleases(): array
     {
         return array_map([$this, 'formatRelease'], $this->store->appReleases());
@@ -648,7 +676,17 @@ class DivanApi
     public function uploadAppRelease($file, ?string $version, ?string $changelog, bool $isLatest, int $now): array
     {
         if (! $file || ! is_object($file) || ! method_exists($file, 'isValid') || ! $file->isValid()) {
-            throw new ApiError(422, 'invalid_app_file', 'فایل بارگذاری‌شده معتبر نیست.');
+            $err = is_object($file) && method_exists($file, 'getError') ? $file->getError() : null;
+            $msg = 'فایل بارگذاری‌شده معتبر نیست یا توسط سرور دریافت نشد.';
+            if ($err === UPLOAD_ERR_INI_SIZE || $err === UPLOAD_ERR_FORM_SIZE) {
+                $uploadMax = ini_get('upload_max_filesize') ?: 'نامشخص';
+                $msg = "حجم فایل از حد مجاز سرور ({$uploadMax}) بیشتر است. لطفاً تنظیمات upload_max_filesize را در هاست افزایش دهید یا از گزینهٔ «شناسایی فایل‌های هاست» استفاده کنید.";
+            } elseif ($err === UPLOAD_ERR_PARTIAL) {
+                $msg = 'ارسال فایل ناقص ماند. لطفاً دوباره تلاش کنید.';
+            } elseif ($err === UPLOAD_ERR_NO_FILE) {
+                $msg = 'هیچ فایلی برای آپلود انتخاب نشده است.';
+            }
+            throw new ApiError(422, 'invalid_app_file', $msg);
         }
 
         $ext = strtolower($file->getClientOriginalExtension());
@@ -715,7 +753,7 @@ class DivanApi
             'build_number' => (int) ($row['build_number'] ?? 1),
             'filename' => $filename,
             'file_path' => $row['file_path'] ?? '',
-            'download_url' => url('/download/app?id='.$id),
+            'download_url' => (config('divan.require_https') ? secure_url('/mobile-api.php?action=app_download&id='.$id) : url('/mobile-api.php?action=app_download&id='.$id)),
             'size_bytes' => $sizeBytes,
             'size_human' => $sizeHuman,
             'changelog' => $row['changelog'] ?? '',
@@ -739,4 +777,70 @@ class DivanApi
 
         return str_replace($fa, $en, $str);
     }
+
+    public function scanHostApks(): array
+    {
+        $destDir = storage_path('app/apk');
+        if (! is_dir($destDir)) {
+            @mkdir($destDir, 0755, true);
+        }
+
+        $searchDirs = [
+            $destDir,
+            public_path('download'),
+            base_path('..'),
+            base_path('../build/app/outputs/flutter-apk'),
+        ];
+
+        $existingReleases = $this->store->appReleases();
+        $existingFiles = array_map(fn ($r) => basename($r['filename']), $existingReleases);
+
+        $found = 0;
+        foreach ($searchDirs as $dir) {
+            if (! is_dir($dir)) {
+                continue;
+            }
+            $files = @glob($dir.DIRECTORY_SEPARATOR.'*.apk') ?: [];
+            foreach ($files as $file) {
+                if (! is_file($file) || ! is_readable($file) || filesize($file) <= 0) {
+                    continue;
+                }
+                $basename = basename($file);
+                $stdName = $basename === 'app-release.apk' ? 'divan-ansaralhossein.apk' : $basename;
+
+                if (in_array($stdName, $existingFiles, true) || in_array($basename, $existingFiles, true)) {
+                    continue;
+                }
+
+                $targetPath = $destDir.DIRECTORY_SEPARATOR.$stdName;
+                if ($file !== $targetPath && ! file_exists($targetPath)) {
+                    @copy($file, $targetPath);
+                }
+                $finalPath = file_exists($targetPath) ? $targetPath : $file;
+
+                $version = '1.0.'.(count($existingReleases) + $found + 1);
+                if (preg_match('/v([0-9]+(?:\.[0-9]+)*)/i', $basename, $m)) {
+                    $version = $m[1];
+                } elseif (str_contains($basename, 'ansaralhossein') || str_contains($basename, 'release')) {
+                    $version = '0.1.0';
+                }
+
+                $this->store->createAppRelease([
+                    'version' => $version,
+                    'build_number' => 1,
+                    'filename' => $stdName,
+                    'file_path' => $finalPath,
+                    'size_bytes' => filesize($finalPath),
+                    'changelog' => 'شناسایی و ثبت خودکار از فایل‌های هاست',
+                    'is_latest' => empty($existingReleases) && $found === 0 ? 1 : 0,
+                    'created_at' => filemtime($finalPath) ?: time(),
+                ]);
+                $existingFiles[] = $stdName;
+                $found++;
+            }
+        }
+
+        return $this->appReleases();
+    }
 }
+

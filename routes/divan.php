@@ -20,46 +20,12 @@ Route::middleware(ApiTransport::class)->group(function () {
 $downloadApp = function (\Illuminate\Http\Request $request, \App\Services\DivanApi $api, $param = null) {
     $id = $request->query('id', $param);
     $version = $request->query('v');
-
-    $release = null;
-    if ($id && is_numeric($id)) {
-        $release = $api->releaseById((int) $id);
-    } elseif ($version) {
-        $release = $api->releaseByVersion((string) $version);
-    }
-
-    if (! $release) {
-        $release = $api->latestRelease();
-    }
-
-    if ($release && ! empty($release['file_path']) && file_exists($release['file_path']) && is_readable($release['file_path'])) {
-        $filePath = $release['file_path'];
-        $downloadName = ! empty($release['filename']) ? $release['filename'] : 'divan-ansaralhossein.apk';
-        if (! str_ends_with(strtolower($downloadName), '.apk')) {
-            $downloadName .= '.apk';
-        }
-
-        return response()->download($filePath, $downloadName, [
+    $download = $api->appDownload(is_string($id) && ctype_digit($id) ? (int) $id : null, is_string($version) ? $version : null);
+    if ($download) {
+        return response()->download($download['path'], $download['filename'], [
             'Content-Type' => 'application/vnd.android.package-archive',
-            'Content-Disposition' => 'attachment; filename="'.$downloadName.'"',
             'Cache-Control' => 'no-cache, must-revalidate',
         ]);
-    }
-
-    $candidates = [
-        storage_path('app/apk/divan-ansaralhossein.apk'),
-        public_path('download/divan-ansaralhossein.apk'),
-        base_path('../divan-ansaralhossein.apk'),
-        base_path('../build/app/outputs/flutter-apk/app-release.apk'),
-    ];
-    foreach ($candidates as $path) {
-        if (file_exists($path) && is_readable($path)) {
-            return response()->download($path, 'divan-ansaralhossein.apk', [
-                'Content-Type' => 'application/vnd.android.package-archive',
-                'Content-Disposition' => 'attachment; filename="divan-ansaralhossein.apk"',
-                'Cache-Control' => 'no-cache, must-revalidate',
-            ]);
-        }
     }
 
     return response('فایل اپلیکیشن هنوز روی سرور قرار نگرفته است. لطفاً از پنل ادمین فایل APK را بارگذاری نمایید.', 404, [

@@ -59,12 +59,23 @@ export class TokenApi {
       xhr.open('POST', url);
       xhr.setRequestHeader('Accept', 'application/json');
       if (currentToken) xhr.setRequestHeader('Authorization', `Bearer ${currentToken}`);
-      xhr.upload.onprogress = event => onProgress(event.lengthComputable ? Math.min(100, Math.round(event.loaded * 100 / event.total)) : null);
-      xhr.onerror = () => reject(new ApiError('نتیجهٔ بارگذاری مشخص نیست؛ ابتدا کتابخانه را تازه کنید.', 0, true));
+      xhr.upload.onprogress = event => onProgress(
+        event.lengthComputable ? Math.min(100, Math.round(event.loaded * 100 / event.total)) : null,
+        event.loaded,
+        event.total
+      );
+      xhr.onerror = () => reject(new ApiError('خطای ارتباط با سرور هنگام ارسال فایل. اتصال اینترنت یا محدودیت حجم سرور را بررسی کنید.', 0, true));
       xhr.onabort = () => reject(new ApiError('بارگذاری لغو شد؛ کتابخانه را برای بررسی نتیجه تازه کنید.', 0, true));
       xhr.onload = () => {
         let data;
-        try { data = JSON.parse(xhr.responseText); } catch { reject(new ApiError('پاسخ معتبر از سرور دریافت نشد.', xhr.status, xhr.status >= 500)); return; }
+        try { data = JSON.parse(xhr.responseText); } catch {
+          if (xhr.status === 413) {
+            reject(new ApiError('حجم فایل فراتر از محدودیت وب‌سرور یا هاست است (خطای 413). می‌توانید فایل را از File Manager هاست در پوشه storage/app/apk قرار داده و دکمه اسکن را بزنید.', 413, false));
+            return;
+          }
+          reject(new ApiError(xhr.status >= 500 ? 'خطای سرور هنگام پردازش فایل بارگذاری‌شده.' : 'پاسخ معتبر از سرور دریافت نشد.', xhr.status, xhr.status >= 500));
+          return;
+        }
         if (xhr.status === 401) {
           if (this.token !== currentToken) { reject(new ApiError('پاسخ مربوط به ورود قبلی است.', 409)); return; }
           this.setToken(''); reject(new ApiError('ورود منقضی شده است؛ دوباره وارد شوید.', 401)); return;
@@ -72,7 +83,7 @@ export class TokenApi {
         if (xhr.status < 200 || xhr.status >= 300 || data?.ok !== true) {
           reject(new ApiError(data?.message || 'بارگذاری انجام نشد.', xhr.status, xhr.status >= 500)); return;
         }
-        onProgress(100); resolve(data);
+        onProgress(100, 0, 0); resolve(data);
       };
       xhr.send(fields);
     });

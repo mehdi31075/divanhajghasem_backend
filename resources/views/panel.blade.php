@@ -2,7 +2,7 @@
 <html lang="fa" dir="rtl">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="divan-api" content="{{ url('/mobile-api.php') }}">
+  <meta name="divan-api" content="{{ config('divan.require_https') ? secure_url('/mobile-api.php') : url('/mobile-api.php') }}">
   <meta name="theme-color" content="#153f37">
   <title>دیوان انصارالحسین(ع) · مدیریت محتوا</title>
   <link rel="icon" href="{{ asset('assets/panel/mark.svg') }}" type="image/svg+xml">
@@ -11,7 +11,7 @@
   <script src="{{ asset('assets/purify/purify.min.js') }}" defer></script>
   <script src="{{ asset('assets/ckeditor/ckeditor5.umd.js') }}" defer></script>
   <script src="{{ asset('assets/ckeditor/fa.umd.js') }}" defer></script>
-  <script type="module" src="{{ asset('assets/panel/app.js') }}?v=20261010-app-dl-v1"></script>
+  <script type="module" src="{{ asset('assets/panel/app.js') }}?v=20261027-https-apk-v1"></script>
 </head>
 <body>
   <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
@@ -59,7 +59,7 @@
       </nav>
       <div class="sidebar-foot"><span class="avatar"><svg><use href="#i-user"/></svg></span><div><strong id="identity"></strong><small>مدیر دیوان</small></div><button id="logout" type="button" aria-label="خروج از حساب" title="خروج"><svg><use href="#i-logout"/></svg></button></div>
     </aside>
-    <div class="workspace"><header class="topbar"><div><span class="section-kicker">دیوان انصارالحسین(ع)</span><strong>فضایی برای نوشته‌های ماندگار</strong></div><div class="topbar-actions"><a class="topbar-download" href="{{ url('/download/app.apk') }}" target="_blank" download="divan-ansaralhossein.apk" title="دانلود مستقیم فایل APK آخرین نسخه"><svg><use href="#i-download"/></svg><span>دانلود اپ (APK)</span></a><button class="primary compact" type="button" data-route="post-new"><svg><use href="#i-plus"/></svg>نوشتهٔ جدید</button></div></header>
+    <div class="workspace"><header class="topbar"><div><span class="section-kicker">دیوان انصارالحسین(ع)</span><strong>فضایی برای نوشته‌های ماندگار</strong></div><div class="topbar-actions"><a class="topbar-download" href="{{ (config('divan.require_https') ? secure_url('/mobile-api.php?action=app_download') : url('/mobile-api.php?action=app_download')) }}" download="divan-ansaralhossein.apk" title="دانلود مستقیم فایل APK آخرین نسخه"><svg><use href="#i-download"/></svg><span>دانلود اپ (APK)</span></a><button class="primary compact" type="button" data-route="post-new"><svg><use href="#i-plus"/></svg>نوشتهٔ جدید</button></div></header>
       <main class="main-content"><p id="notice" role="status" aria-live="polite"></p><div id="content" aria-busy="false"></div><footer class="page-footer">دیوان <span>·</span> مدیریت نوشته‌ها</footer></main>
     </div>
   </div>

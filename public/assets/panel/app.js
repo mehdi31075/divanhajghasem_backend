@@ -343,7 +343,7 @@ async function render(route) {
     const latest = appRes?.latest || appRes?.releases?.[0] || null;
     html = `<section class="dashboard-hero"><div><span class="section-kicker">فضای مدیریت شما</span><h1>به دیوان خوش آمدید.</h1><p>نوشته‌ای تازه منتشر کنید یا به سراغ نوشته‌های قبلی بروید.</p></div><svg class="hero-mark" aria-hidden="true"><use href="#i-book"/></svg></section>
       <div class="grid stats"><section class="card"><span class="stat-icon">${icon('book')}</span><div><strong>${digits(data.stats.posts)}</strong><small>نوشته در دیوان</small></div></section><section class="card"><span class="stat-icon gold">${icon('grid')}</span><div><strong>${digits(data.stats.categories)}</strong><small>دسته‌بندی</small></div></section></div>
-      <section class="card app-quick-card"><div class="app-quick-info"><span class="stat-icon">${icon('download')}</span><div><strong>دریافت آخرین نسخهٔ اپلیکیشن اندروید (APK)</strong><small>${latest ? `نسخه ${e(latest.version)} · حجم: ${digits(latest.size_human)}${latest.created_at ? ` · آخرین به‌روزرسانی: ${e(displayDate(latest.created_at))}` : ''}` : 'فایل آماده دانلود است'}</small></div></div><div class="app-quick-actions"><a class="button primary compact" href="${e(latest?.download_url || '/download/app.apk')}" download="${e(latest?.filename || 'divan-ansaralhossein.apk')}">${icon('download')} دانلود فایل APK</a>${button('جدول نسخه‌ها و مدیریت', 'app')}</div></section>
+      <section class="card app-quick-card"><div class="app-quick-info"><span class="stat-icon">${icon('download')}</span><div><strong>دریافت آخرین نسخهٔ اپلیکیشن اندروید (APK)</strong><small>${latest ? `نسخه ${e(latest.version)} · حجم: ${digits(latest.size_human)}${latest.created_at ? ` · آخرین به‌روزرسانی: ${e(displayDate(latest.created_at))}` : ''}` : 'فایل آماده دانلود است'}</small></div></div><div class="app-quick-actions"><a class="button primary compact" href="${e(latest?.download_url || '/mobile-api.php?action=app_download')}" download="${e(latest?.filename || 'divan-ansaralhossein.apk')}">${icon('download')} دانلود فایل APK</a>${button('جدول نسخه‌ها و مدیریت', 'app')}</div></section>
       <div class="dashboard-columns"><section><div class="section-heading"><h2>تازه‌ترین نوشته‌ها</h2>${button('همهٔ نوشته‌ها', 'posts')}</div><div class="card">${recent.posts.slice(0,5).map(p => `<div class="recent-row"><span class="mini-book">${icon('book')}</span><div><strong>${e(p.news_heading)}</strong><small>${e(p.news_date)}</small></div>${button('مطالعه', `read/${p.nid}`)}</div>`).join('') || '<p class="empty">اولین نوشتهٔ دیوان را منتشر کنید.</p>'}<div class="actions" style="margin:20px 0 0">${button('نوشتن مطلب جدید', 'post-new')}</div></div></section><section><div class="section-heading"><h2>دسته‌بندی‌ها</h2>${button('مدیریت دسته‌ها', 'categories')}</div><div class="card">${rows.slice(0,4).map(c => {const src = imageUrl(c.category_image, api.endpoint);return `<a class="mini-category" href="#posts/category_id=${e(c.cid)}" data-route="posts/category_id=${e(c.cid)}">${src ? `<img src="${e(src)}" alt="" loading="lazy">` : icon('grid')}<div><strong>${e(c.category_name)}</strong><small>${e(c.author)}</small></div></a>`;}).join('') || '<p class="empty">دسته‌بندی‌ای ثبت نشده است.</p>'}</div></section></div>`;
   } else if (view === 'posts') {
     await categories();
@@ -566,9 +566,14 @@ async function render(route) {
 
       <div class="grid app-detail-grid">
         <section class="card table-wrap" style="grid-column: 1 / -1">
-          <div class="section-heading" style="margin-top:0">
-            <h2>جدول نسخه‌های اپلیکیشن</h2>
-            <span class="category-badge">${digits(releases.length)} نسخه</span>
+          <div class="section-heading" style="margin-top:0;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+            <div>
+              <h2>جدول نسخه‌های اپلیکیشن</h2>
+              <span class="category-badge">${digits(releases.length)} نسخه</span>
+            </div>
+            <button type="button" class="compact secondary" id="scan-host-apks" title="اگر فایل APK را از طریق سی‌پنل یا FTP روی هاست ریخته‌اید، با این دکمه خودکار شناسایی و ثبت می‌شود">
+              ${icon('refresh')} شناسایی و ثبت فایل‌های موجود روی هاست
+            </button>
           </div>
           <table>
             <thead>
@@ -602,7 +607,7 @@ async function render(route) {
               `).join('')}
             </tbody>
           </table>
-          ${releases.length ? '' : '<p class="empty">هنوز هیچ نسخه‌ای ثبت نشده است. از فرم زیر نسخهٔ اول را بارگذاری کنید.</p>'}
+          ${releases.length ? '' : '<p class="empty">هنوز هیچ نسخه‌ای ثبت نشده است. از فرم زیر نسخهٔ اول را بارگذاری کنید یا اگر فایل را روی هاست قرار داده‌اید، دکمهٔ «شناسایی و ثبت فایل‌های موجود روی هاست» را بزنید.</p>'}
         </section>
 
         <section class="card form-card" style="grid-column: 1 / -1; max-width: 700px">
@@ -618,6 +623,13 @@ async function render(route) {
             <label>انتخاب فایل APK جدید
               <input name="app_apk" type="file" accept=".apk,application/vnd.android.package-archive" required>
             </label>
+            <div class="media-progress" id="apk-progress" hidden style="margin:12px 0;background:var(--bg-accent,#f4f6f8);padding:10px 12px;border-radius:6px">
+              <progress id="apk-progress-bar" value="0" max="100" style="width:100%;height:10px"></progress>
+              <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text-muted);margin-top:6px">
+                <span id="apk-progress-text">۰٪</span>
+                <span id="apk-progress-bytes"></span>
+              </div>
+            </div>
             <label style="display:flex;align-items:center;gap:10px;margin-bottom:16px;cursor:pointer">
               <input name="is_latest" type="checkbox" checked style="width:auto;min-height:auto">
               <span>تنظیم به عنوان آخرین نسخهٔ فعال (لینک دانلود اصلی به این نسخه اشاره خواهد کرد)</span>
@@ -625,6 +637,10 @@ async function render(route) {
             <p class="form-message" role="alert"></p>
             <button class="primary" type="submit">بارگذاری و ثبت نسخه</button>
           </form>
+          <div class="callout" style="margin-top:16px;background:var(--bg-accent,#f0f4f8);padding:12px 16px;border-radius:8px;font-size:13px;color:var(--text-muted);line-height:1.7">
+            <strong>💡 راهکار جایگزین در صورت کندی اینترنت یا محدودیت سرور:</strong>
+            <p style="margin:6px 0 0">اگر به دلیل حجم فایل APK (~۶۰ مگابایت) یا سرعت اینترنت ارسال فایل از مرورگر زمان‌بر است، می‌توانید فایل APK را مستقیماً از طریق File Manager هاست در پوشهٔ <code>storage/app/apk</code> یا <code>public/download</code> قرار دهید و سپس روی دکمهٔ <strong>«شناسایی و ثبت فایل‌های موجود روی هاست»</strong> در بالای جدول کلیک کنید تا فوراً و بدون معطلی شناسایی و ثبت شود.</p>
+          </div>
         </section>
       </div>
     `;
@@ -632,12 +648,29 @@ async function render(route) {
       const copyBtn = $('#copy-latest-link');
       if (copyBtn) {
         copyBtn.onclick = async () => {
-          const downloadUrl = new URL(latest?.download_url || '/download/app.apk', window.location.href).href;
+          const downloadUrl = new URL(latest?.download_url || '/mobile-api.php?action=app_download', window.location.href).href;
           try {
             await navigator.clipboard.writeText(downloadUrl);
             notice('لینک مستقیم دانلود در حافظه کپی شد.');
           } catch {
             window.prompt('لینک دانلود:', downloadUrl);
+          }
+        };
+      }
+      const scanBtn = $('#scan-host-apks');
+      if (scanBtn) {
+        scanBtn.onclick = async () => {
+          scanBtn.disabled = true;
+          const origText = scanBtn.textContent;
+          scanBtn.textContent = 'در حال بررسی هاست…';
+          try {
+            const res = await api.call('app_scan', {method: 'POST'});
+            notice(res?.message || 'اسکن هاست انجام شد.');
+            await render('app');
+          } catch (error) {
+            notice(error.message, true);
+            scanBtn.disabled = false;
+            scanBtn.textContent = origText;
           }
         };
       }
@@ -678,14 +711,47 @@ async function render(route) {
           if (!file) return;
           const submit = form.querySelector('button[type=submit]');
           if (submit && submit.disabled) return;
-          if (submit) {
-            submit.disabled = true;
-            submit.textContent = 'در حال بارگذاری فایل APK…';
-          }
+
+          const progressBox = $('#apk-progress');
+          const progressBar = $('#apk-progress-bar');
+          const progressText = $('#apk-progress-text');
+          const progressBytes = $('#apk-progress-bytes');
+
+          if (submit) submit.disabled = true;
+          if (progressBox) progressBox.hidden = false;
+          if (progressBar) progressBar.value = 0;
+          if (progressText) progressText.textContent = '۰٪';
+          if (progressBytes) progressBytes.textContent = '';
           formMessage(form, 'در حال ارسال فایل APK به سرور…', false);
+
+          const formatBytes = b => {
+            if (!b) return '';
+            const mb = (b / (1024 * 1024)).toFixed(1);
+            return `${digits(mb)} مگابایت`;
+          };
+
           try {
             const formData = new FormData(form);
-            await api.call('app_upload', {method: 'POST', fields: formData});
+            await api.upload('app_upload', {
+              fields: formData,
+              onProgress: (pct, loaded, total) => {
+                if (pct !== null) {
+                  if (progressBar) progressBar.value = pct;
+                  if (progressText) progressText.textContent = `${digits(pct)}٪`;
+                  if (loaded && total && progressBytes) {
+                    progressBytes.textContent = `${formatBytes(loaded)} از ${formatBytes(total)}`;
+                  }
+                  if (submit) {
+                    submit.textContent = pct < 100
+                      ? `در حال ارسال… (${digits(pct)}٪)`
+                      : 'در حال ذخیره‌سازی روی سرور…';
+                  }
+                  if (pct >= 100) {
+                    formMessage(form, 'فایل با موفقیت به سرور منتقل شد؛ در حال ذخیره‌سازی و ثبت در جدول…', false);
+                  }
+                }
+              }
+            });
             notice('نسخهٔ جدید اپلیکیشن با موفقیت در جدول ثبت شد.');
             await render('app');
           } catch (error) {
@@ -695,6 +761,9 @@ async function render(route) {
             if (submit) {
               submit.disabled = false;
               submit.textContent = 'بارگذاری و ثبت نسخه';
+            }
+            if (progressBox) {
+              setTimeout(() => { progressBox.hidden = true; }, 1500);
             }
           }
         });

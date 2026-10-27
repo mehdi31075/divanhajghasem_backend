@@ -37,6 +37,7 @@ async function fixture({rich=false}={}){
   if(action==='app_info' || action==='app_releases'){const rel=state.appReleases || [{id:'1',version:'۰.۱.۰',version_raw:'0.1.0',filename:'divan-ansaralhossein.apk',download_url:'/download/app.apk',size_bytes:59000000,size_human:'۵۹ مگابایت',changelog:'نسخه اول',is_latest:true,created_at:'2026-10-10T01:00:00Z'}];return reply({ok:true,releases:rel,latest:rel[0]});}
   state.mutations++;
   if(action==='app_upload'){state.appUploaded=true;const rel=[{id:'2',version:'۰.۱.۱',version_raw:'0.1.1',filename:'divan-ansaralhossein-v0.1.1.apk',download_url:'/download/app?id=2',size_bytes:60000000,size_human:'۶۰ مگابایت',changelog:'نسخه تازه',is_latest:true,created_at:'2026-10-10T02:00:00Z'}];return reply({ok:true,releases:rel,latest:rel[0]});}
+  if(action==='app_scan'){state.appScanned=true;const rel=state.appReleases || [{id:'1',version:'۰.۱.۰',version_raw:'0.1.0',filename:'divan-ansaralhossein.apk',download_url:'/download/app.apk',size_bytes:59000000,size_human:'۵۹ مگابایت',changelog:'نسخه اول',is_latest:true,created_at:'2026-10-10T01:00:00Z'}];return reply({ok:true,message:'فایل‌های هاست بررسی شدند.',releases:rel,latest:rel[0]});}
   if(action==='app_set_latest' || action==='app_delete'){return reply({ok:true,releases:[],latest:null});}
   if(action==='media_update'){state.media.find(item=>decodeURIComponent(new URL(item.url,'https://fixture.test').pathname.split('/').pop())===fields.id).name=fields.name;return reply({ok:true});}
   if(action==='support_reply'){const m=state.supportMessages.find(item=>item.id===fields.id);if(!m.replies)m.replies=[];m.replies.push({id:String(m.replies.length+1),sender:'admin',message:fields.reply,created_at:'2026-10-09T11:00:00Z'});Object.assign(m,{reply:fields.reply,replied_at:'2026-10-09T11:00:00Z'});return reply({ok:true});}
@@ -50,6 +51,22 @@ async function fixture({rich=false}={}){
   else throw new Error(`Unhandled action ${action}`);
   if(state.loseNextResponse){state.loseNextResponse=false;throw new Error('response lost after commit');}
   return reply({ok:true});
+ };
+ dom.window.XMLHttpRequest=class MockXHR {
+  constructor(){this.upload={onprogress:null};this.status=200;this.responseText='';this.onload=null;this.onerror=null;this.headers={};}
+  open(method,url){this.url=new URL(url);this.method=method;}
+  setRequestHeader(name,value){this.headers[name]=value;}
+  send(formData){
+   setTimeout(async()=>{
+    try{
+     const res=await dom.window.fetch(this.url,{method:this.method,body:formData,credentials:'omit',headers:this.headers});
+     this.status=res.status;
+     this.responseText=await res.text();
+     if(this.upload.onprogress)this.upload.onprogress({lengthComputable:true,loaded:100,total:100});
+     if(this.onload)this.onload();
+    }catch(err){if(this.onerror)this.onerror(err);}
+   },0);
+  }
  };
  const context=dom.getInternalVMContext();
  if(rich){
@@ -255,5 +272,16 @@ test('admin can access app download card on home and app releases table page',as
     assert.match(f.doc.querySelector('.table-wrap').textContent,/divan-ansaralhossein\.apk/);
     assert.match(f.doc.querySelector('#content').textContent,/دانلود APK/);
     assert.match(f.doc.querySelector('#content').textContent,/جدول نسخه‌های اپلیکیشن/);
+    assert.ok(f.doc.querySelector('#scan-host-apks'));
+    f.click('#scan-host-apks');
+    await waitFor(()=>f.state.appScanned);
+    assert.equal(f.state.appScanned,true);
+    f.input('#app-upload-form [name=version]','0.1.1');
+    const fileInput=f.doc.querySelector('#app-upload-form [name=app_apk]');
+    const file=new f.dom.window.File(['dummy apk'],'divan-ansaralhossein-v0.1.1.apk',{type:'application/vnd.android.package-archive'});
+    Object.defineProperty(fileInput,'files',{value:[file]});
+    f.submit('#app-upload-form');
+    await waitFor(()=>f.state.appUploaded);
+    assert.equal(f.state.appUploaded,true);
   }finally{f.dom.window.close();}
 });
