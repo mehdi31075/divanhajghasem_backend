@@ -148,7 +148,7 @@ class DivanApi
 
             return $rows ? ['AndroidEbookApp' => $rows] : [];
         }
-        if (! in_array($action, ['login', 'me', 'logout', 'create', 'update', 'delete', 'stats', 'posts', 'pages', 'page_update', 'account', 'account_update', 'category_create', 'category_update', 'category_delete', 'media_list', 'media_upload', 'media_update', 'media_delete', 'support_start', 'support_verify', 'support_send', 'support_mine', 'support_logout', 'support_list', 'support_reply', 'support_reply_update', 'support_reply_delete', 'support_create', 'support_check', 'user_start', 'user_verify', 'user_me', 'user_logout', 'users', 'article_view', 'app_info', 'app_releases', 'app_upload', 'app_set_latest', 'app_delete', 'app_scan'], true)) {
+        if (! in_array($action, ['login', 'me', 'logout', 'create', 'update', 'delete', 'stats', 'posts', 'pages', 'page_update', 'account', 'account_update', 'category_create', 'category_update', 'category_delete', 'category_reorder', 'media_list', 'media_upload', 'media_update', 'media_delete', 'support_start', 'support_verify', 'support_send', 'support_mine', 'support_logout', 'support_list', 'support_reply', 'support_reply_update', 'support_reply_delete', 'support_create', 'support_check', 'user_start', 'user_verify', 'user_me', 'user_logout', 'users', 'article_view', 'app_info', 'app_releases', 'app_upload', 'app_set_latest', 'app_delete', 'app_scan'], true)) {
             throw new ApiError(404, 'unknown_action', 'این عملیات وجود ندارد.');
         }
         $requiredMethod = in_array($action, ['me', 'stats', 'posts', 'pages', 'account', 'media_list', 'support_list', 'support_mine', 'user_me', 'users', 'app_info', 'app_releases'], true) ? 'GET' : 'POST';
@@ -481,6 +481,24 @@ class DivanApi
             $this->store->updateAccount($username, $email, $passwordHash);
 
             return ['ok' => true, 'reauthenticate' => $changePassword];
+        }
+        if ($action === 'category_reorder') {
+            $orders = [];
+            foreach (['ids', 'previous_ids'] as $key) {
+                $value = $input[$key] ?? null;
+                $list = is_string($value) ? json_decode($value, true) : null;
+                if (! is_array($list) || ! array_is_list($list) || count($list) > 10000) {
+                    throw new ApiError(422, 'invalid_category_order', 'ترتیب دسته‌ها معتبر نیست.');
+                }
+                $list = array_map(fn ($id) => $this->id($id), $list);
+                if (count($list) !== count(array_unique($list))) {
+                    throw new ApiError(422, 'invalid_category_order', 'شناسهٔ تکراری در ترتیب دسته‌ها وجود دارد.');
+                }
+                $orders[$key] = $list;
+            }
+            $this->store->reorderCategories($orders['ids'], $orders['previous_ids']);
+
+            return ['ok' => true, 'ids' => $orders['ids']];
         }
         if ($action === 'category_delete') {
             $id = $this->id(isset($input['id']) ? $input['id'] : null);

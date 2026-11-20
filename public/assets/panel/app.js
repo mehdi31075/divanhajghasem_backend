@@ -30,6 +30,78 @@ function preview(frame, html) {
   frame.srcdoc = '<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><style>body{font:22px/2 Tahoma,sans-serif;color:#172b28;padding:20px}img{max-width:100%;height:auto}</style></head><body>' + html + '</body></html>';
 }
 async function categories() { state.categories = await api.call(''); return state.categories; }
+function bindCategoryOrder(rows) {
+  const list = $('#category-list'), save = $('#save-category-order'), status = $('#category-order-status');
+  let baseline = rows.map(row => String(row.cid));
+  let saving = false;
+  const ids = () => [...list.querySelectorAll('[data-category-id]')].map(row => row.dataset.categoryId);
+  function changed() {
+    [...list.children].forEach((row, index) => {
+      const rank = row.querySelector('.category-position');
+      if (rank) rank.textContent = digits(index + 1);
+    });
+    state.dirty = JSON.stringify(ids()) !== JSON.stringify(baseline);
+    save.disabled = saving || !state.dirty;
+    status.textContent = state.dirty ? 'ترتیب جدید هنوز ذخیره نشده است.' : '';
+  }
+  for (const handle of list.querySelectorAll('.category-drag')) {
+    const row = handle.closest('[data-category-id]');
+    let startY = null, dragging = false;
+    handle.addEventListener('pointerdown', event => {
+      if (saving || event.button !== 0) return;
+      startY = event.clientY;
+      handle.setPointerCapture(event.pointerId);
+    });
+    handle.addEventListener('pointermove', event => {
+      if (startY === null || saving) return;
+      if (!dragging && Math.abs(event.clientY - startY) < 5) return;
+      dragging = true;
+      row.classList.add('dragging');
+      const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-category-id]');
+      if (target && target !== row && list.contains(target)) {
+        const rect = target.getBoundingClientRect();
+        list.insertBefore(row, event.clientY < rect.top + rect.height / 2 ? target : target.nextSibling);
+        changed();
+      }
+      if (event.clientY < 90) window.scrollBy(0, -18);
+      else if (event.clientY > window.innerHeight - 90) window.scrollBy(0, 18);
+    });
+    const finish = () => {
+      if (startY === null) return;
+      startY = null; dragging = false; row.classList.remove('dragging'); changed();
+    };
+    handle.addEventListener('pointerup', finish);
+    handle.addEventListener('pointercancel', finish);
+    handle.addEventListener('lostpointercapture', finish);
+    handle.addEventListener('keydown', event => {
+      if (saving || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+      event.preventDefault();
+      const other = event.key === 'ArrowUp' ? row.previousElementSibling : row.nextElementSibling;
+      if (other) list.insertBefore(row, event.key === 'ArrowUp' ? other : other.nextSibling);
+      handle.focus(); changed();
+    });
+  }
+  save.onclick = async () => {
+    if (saving) return;
+    const ordered = ids();
+    saving = true; save.disabled = true; list.inert = true;
+    status.textContent = 'در حال ذخیره…';
+    try {
+      await api.call('category_reorder', {method: 'POST', fields: {ids: JSON.stringify(ordered), previous_ids: JSON.stringify(baseline)}});
+      if (!list.isConnected) return;
+      baseline = ordered;
+      state.categories = ordered.map(id => rows.find(row => String(row.cid) === id));
+      state.dirty = false;
+      status.textContent = 'ترتیب دسته‌ها روی سرور ذخیره شد.';
+    } catch (error) {
+      if (!list.isConnected) return;
+      status.textContent = error.message;
+      if (error.status === 401) lock(error.message);
+    } finally {
+      saving = false; list.inert = false; save.disabled = !state.dirty;
+    }
+  };
+}
 function categoryOptions(selected, all = false) {
   return (all ? '<option value="">همه دسته‌ها</option>' : '') + state.categories.map(c => `<option value="${e(c.cid)}" ${String(c.cid) === String(selected) ? 'selected' : ''}>${e(c.category_name)}</option>`).join('');
 }
@@ -505,7 +577,15 @@ async function render(route) {
     }
   } else if (view === 'categories') {
     const rows = await categories();
-    html = `<div class="actions"><h1>دسته‌بندی‌ها</h1>${button('دسته جدید', 'category-new')}</div><div class="grid">${rows.map(c => { const src = imageUrl(c.category_image, api.endpoint); return `<section class="card category-card">${src ? `<img src="${e(src)}" alt="${e(c.category_name)}" loading="lazy">` : '<p class="muted">بدون تصویر</p>'}<h2>${e(c.category_name)}</h2><p>${e(c.author)}</p><div class="actions">${button('ویرایش', `category/${c.cid}`)}<button class="danger" data-delete="category" data-id="${e(c.cid)}" data-label="${e(c.category_name)}">حذف</button></div></section>`; }).join('') || '<p>دسته‌ای ثبت نشده است.</p>'}</div>`;
+    html = `<div class="actions"><h1>دسته‌بندی‌ها</h1>${button('دسته جدید', 'category-new')}</div>
+      <p class="help" id="category-order-help">دستگیرهٔ کنار هر دسته را بکشید تا اولویت آن تغییر کند؛ سپس ترتیب را ذخیره کنید. با کلیدهای بالا و پایین هم می‌توانید جابه‌جا کنید.</p>
+      <div class="actions"><button id="save-category-order" class="primary compact" disabled>ذخیره ترتیب</button><span id="category-order-status" role="status" aria-live="polite"></span></div>
+      <ol id="category-list" class="category-list" aria-label="ترتیب دسته‌بندی‌ها">${rows.map((c, index) => { const src = imageUrl(c.category_image, api.endpoint); return `<li class="category-row" data-category-id="${e(c.cid)}">
+        <button type="button" class="category-drag" aria-label="جابه‌جایی ${e(c.category_name)}" aria-describedby="category-order-help" title="بکشید یا از کلیدهای بالا و پایین استفاده کنید"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h.01M16 5h.01M8 12h.01M16 12h.01M8 19h.01M16 19h.01" stroke-width="4"/></svg></button>
+        <span class="category-position">${digits(index + 1)}</span>${src ? `<img src="${e(src)}" alt="" loading="lazy" draggable="false">` : '<span class="category-thumbnail">بدون تصویر</span>'}
+        <div class="category-description"><strong>${e(c.category_name)}</strong><small>${e(c.author)}</small></div>
+        <div class="actions">${button('ویرایش', `category/${c.cid}`)}<button class="danger" data-delete="category" data-id="${e(c.cid)}" data-label="${e(c.category_name)}">حذف</button></div></li>`; }).join('') || '<li class="empty">دسته‌ای ثبت نشده است.</li>'}</ol>`;
+    after = () => bindCategoryOrder(rows);
   } else if (view === 'category' || view === 'category-new') {
     await categories();
     const original = view === 'category' ? state.categories.find(c => String(c.cid) === String(id)) : null;

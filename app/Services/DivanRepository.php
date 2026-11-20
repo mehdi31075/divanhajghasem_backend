@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Exceptions\ApiError;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class DivanRepository
 {
@@ -60,6 +61,47 @@ class DivanRepository
         $rows = $this->query('SELECT cid, category_name, category_image, author, status FROM tbl_news_category WHERE cid = ?', [$id]);
 
         return count($rows) === 1 ? $rows[0] : null;
+    }
+
+    public function ensureCategoryOrderTable(): void
+    {
+        // Separate InnoDB storage keeps reordering atomic even with legacy MyISAM categories.
+        if (! Schema::hasTable('divan_category_order')) {
+            Schema::create('divan_category_order', function ($table) {
+                $table->engine = 'InnoDB';
+                $table->unsignedTinyInteger('id')->primary();
+                $table->longText('category_ids');
+            });
+        }
+        DB::table('divan_category_order')->insertOrIgnore(['id' => 1, 'category_ids' => '[]']);
+    }
+
+    public static function orderedCategories(array $rows, array $ids): array
+    {
+        $positions = array_flip($ids);
+        usort($rows, static fn ($a, $b) =>
+            (($positions[(string) $a['cid']] ?? PHP_INT_MAX) <=> ($positions[(string) $b['cid']] ?? PHP_INT_MAX))
+            ?: ((int) $b['cid'] <=> (int) $a['cid']));
+
+        return $rows;
+    }
+
+    public function reorderCategories(array $ids, array $previous): void
+    {
+        $this->ensureCategoryOrderTable();
+        DB::transaction(function () use ($ids, $previous) {
+            $order = DB::table('divan_category_order')->where('id', 1)->lockForUpdate()->first();
+            $rows = $this->query('SELECT cid FROM tbl_news_category ORDER BY cid DESC');
+            $current = array_map(static fn ($row) => (string) $row['cid'], self::orderedCategories($rows, json_decode($order->category_ids, true, 512, JSON_THROW_ON_ERROR)));
+            $requestedSet = $ids;
+            $currentSet = $current;
+            sort($requestedSet);
+            sort($currentSet);
+            if ($requestedSet !== $currentSet || ($current !== $previous && $current !== $ids)) {
+                throw new ApiError(409, 'category_order_changed', 'فهرست یا ترتیب دسته‌ها تغییر کرده است. فهرست را تازه کنید و دوباره مرتب کنید.');
+            }
+            DB::table('divan_category_order')->where('id', 1)->update(['category_ids' => json_encode($ids, JSON_THROW_ON_ERROR)]);
+        });
     }
 
     public function createCategory($input, $image)
@@ -181,7 +223,12 @@ class DivanRepository
             return $map($this->query($sql.' ORDER BY n.nid ASC LIMIT '.(int) $query['latest_news']));
         }
 
-        return $this->query('SELECT cid, category_name, category_image, author, status FROM tbl_news_category ORDER BY cid DESC');
+        $rows = $this->query('SELECT cid, category_name, category_image, author, status FROM tbl_news_category ORDER BY cid DESC');
+        $ids = Schema::hasTable('divan_category_order')
+            ? json_decode(DB::table('divan_category_order')->where('id', 1)->value('category_ids') ?? '[]', true, 512, JSON_THROW_ON_ERROR)
+            : [];
+
+        return self::orderedCategories($rows, $ids);
     }
 
     private function formatArticleDates($row)

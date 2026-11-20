@@ -36,6 +36,7 @@ async function fixture({rich=false}={}){
   if(action==='account')return reply({ok:true,account:{Username:'fixture-admin',Email:'fixture@example.test'}});
   if(action==='app_info' || action==='app_releases'){const rel=state.appReleases || [{id:'1',version:'۰.۱.۰',version_raw:'0.1.0',filename:'divan-ansaralhossein.apk',download_url:'/download/app.apk',size_bytes:59000000,size_human:'۵۹ مگابایت',changelog:'نسخه اول',is_latest:true,created_at:'2026-10-10T01:00:00Z'}];return reply({ok:true,releases:rel,latest:rel[0]});}
   state.mutations++;
+  if(action==='category_reorder'){state.categories=JSON.parse(fields.ids).map(id=>state.categories.find(c=>c.cid===id));if(state.loseNextResponse){state.loseNextResponse=false;throw new Error('lost response');}return reply({ok:true});}
   if(action==='app_upload'){state.appUploaded=true;const rel=[{id:'2',version:'۰.۱.۱',version_raw:'0.1.1',filename:'divan-ansaralhossein-v0.1.1.apk',download_url:'/download/app?id=2',size_bytes:60000000,size_human:'۶۰ مگابایت',changelog:'نسخه تازه',is_latest:true,created_at:'2026-10-10T02:00:00Z'}];return reply({ok:true,releases:rel,latest:rel[0]});}
   if(action==='app_scan'){state.appScanned=true;const rel=state.appReleases || [{id:'1',version:'۰.۱.۰',version_raw:'0.1.0',filename:'divan-ansaralhossein.apk',download_url:'/download/app.apk',size_bytes:59000000,size_human:'۵۹ مگابایت',changelog:'نسخه اول',is_latest:true,created_at:'2026-10-10T01:00:00Z'}];return reply({ok:true,message:'فایل‌های هاست بررسی شدند.',releases:rel,latest:rel[0]});}
   if(action==='app_set_latest' || action==='app_delete'){return reply({ok:true,releases:[],latest:null});}
@@ -108,7 +109,7 @@ test('real panel forms login, create, edit and delete using tokens',async()=>{
 test('category form preserves an existing image and escapes server names',async()=>{
  const f=await fixture();try{await f.login();await waitFor(()=>f.doc.querySelector('[data-route="categories"]'));f.click('[data-route="categories"]');await waitFor(()=>f.doc.querySelector('[data-route="category/61"]'));
   f.click('[data-route="category/61"]');await waitFor(()=>f.doc.querySelector('#category-form'));const malicious='<img src=x onerror="window.pwned=1">';f.input('[name=category_name]',malicious);f.submit('#category-form');
-  await waitFor(()=>!f.doc.querySelector('#category-form'));assert.equal(f.state.categories[0].category_image,'one.png');assert.equal(f.doc.querySelector('.category-card h2').textContent,malicious);assert.equal(f.dom.window.pwned,undefined);
+  await waitFor(()=>!f.doc.querySelector('#category-form'));assert.equal(f.state.categories[0].category_image,'one.png');assert.equal(f.doc.querySelector('.category-description strong').textContent,malicious);assert.equal(f.dom.window.pwned,undefined);
  }finally{f.dom.window.close();}
 });
 test('expired login retains the unsaved form and resumes it after reauthentication',async()=>{
@@ -266,7 +267,7 @@ test('admin can access app download card on home and app releases table page',as
     await waitFor(()=>f.doc.querySelector('.app-quick-card'));
     assert.match(f.doc.querySelector('.app-quick-card').textContent,/دانلود فایل APK/);
     assert.ok(f.doc.querySelector('.topbar-download'));
-    assert.match(f.doc.querySelector('.topbar-download').getAttribute('href'),/download\/app\.apk/);
+    assert.match(f.doc.querySelector('.topbar-download').getAttribute('href'),/mobile-api\.php\?action=app_download/);
     f.click('nav a[href="#app"]');
     await waitFor(()=>f.doc.querySelector('#app-upload-form'));
     assert.match(f.doc.querySelector('.table-wrap').textContent,/divan-ansaralhossein\.apk/);
@@ -284,4 +285,28 @@ test('admin can access app download card on home and app releases table page',as
     await waitFor(()=>f.state.appUploaded);
     assert.equal(f.state.appUploaded,true);
   }finally{f.dom.window.close();}
+});
+
+test('category list reorders with pointer and keyboard, saves, and retains an uncertain order for retry', async () => {
+ const f=await fixture();try {
+  f.state.categories.push({cid:'62',category_name:'دسته دوم',category_image:'two.png',author:'نویسنده',status:'1'});
+  await f.login(); await waitFor(()=>f.doc.querySelector('[data-route="categories"]'));
+  f.click('[data-route="categories"]');await waitFor(()=>f.doc.querySelector('#category-list'));
+  assert.equal(f.doc.querySelector('.category-card'),null);
+  const order=()=>[...f.doc.querySelectorAll('[data-category-id]')].map(r=>r.dataset.categoryId);
+  const handle=f.doc.querySelector('.category-drag');handle.setPointerCapture=()=>{};
+  f.doc.elementFromPoint=()=>f.doc.querySelector('[data-category-id="62"]');
+  handle.dispatchEvent(new f.dom.window.MouseEvent('pointerdown',{clientY:0,button:0}));
+  f.dom.window.scrollBy=()=>{};
+  handle.dispatchEvent(new f.dom.window.MouseEvent('pointermove',{clientY:100,clientX:100}));
+  handle.dispatchEvent(new f.dom.window.MouseEvent('pointerup'));
+  assert.deepEqual(order(),['62','61']);
+  f.state.loseNextResponse=true;f.click('#save-category-order');
+  await waitFor(()=>!f.doc.querySelector('#save-category-order').disabled);
+  assert.deepEqual(order(),['62','61']);
+  f.click('#save-category-order');await waitFor(()=>f.doc.querySelector('#category-order-status').textContent.includes('ذخیره شد'));
+  assert.deepEqual(f.state.categories.map(c=>c.cid),['62','61']);
+  handle.dispatchEvent(new f.dom.window.KeyboardEvent('keydown',{key:'ArrowUp',bubbles:true,cancelable:true}));
+  assert.deepEqual(order(),['61','62']);
+ }finally{f.dom.window.close();}
 });
