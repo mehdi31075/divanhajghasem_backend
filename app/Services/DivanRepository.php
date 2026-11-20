@@ -309,30 +309,56 @@ class DivanRepository
         return (int) $rows[0]['total'];
     }
 
+    public function ensureSupportUsersColumns(): void
+    {
+        try {
+            if (\Illuminate\Support\Facades\Schema::hasTable('divan_support_users')) {
+                \Illuminate\Support\Facades\Schema::table('divan_support_users', function (\Illuminate\Database\Schema\Blueprint $table) {
+                    if (! \Illuminate\Support\Facades\Schema::hasColumn('divan_support_users', 'father_name')) {
+                        $table->string('father_name', 120)->nullable()->after('name');
+                    }
+                    if (! \Illuminate\Support\Facades\Schema::hasColumn('divan_support_users', 'is_admin')) {
+                        $table->boolean('is_admin')->default(false)->after('mobile');
+                    }
+                });
+            }
+        } catch (\Throwable) {}
+    }
+
     public function supportUserByPhone($mobile)
     {
-        $rows = $this->query('SELECT id, name, mobile FROM divan_support_users WHERE mobile = ?', [$mobile]);
+        $this->ensureSupportUsersColumns();
+        $rows = $this->query('SELECT id, name, mobile, father_name, is_admin FROM divan_support_users WHERE mobile = ?', [$mobile]);
 
         return $rows[0] ?? null;
     }
 
     public function supportUser($id)
     {
-        $rows = $this->query('SELECT id, name, mobile FROM divan_support_users WHERE id = ?', [$id]);
+        $this->ensureSupportUsersColumns();
+        $rows = $this->query('SELECT id, name, mobile, father_name, is_admin FROM divan_support_users WHERE id = ?', [$id]);
 
         return $rows[0] ?? null;
     }
 
     public function supportUsers()
     {
-        return $this->query('SELECT u.id, u.name, u.mobile, u.created_at, COUNT(m.id) AS support_messages FROM divan_support_users u LEFT JOIN divan_support_messages m ON m.user_id = u.id GROUP BY u.id, u.name, u.mobile, u.created_at ORDER BY u.id DESC LIMIT 1000');
+        $this->ensureSupportUsersColumns();
+        return $this->query('SELECT u.id, u.name, u.mobile, u.father_name, u.is_admin, u.created_at, COUNT(m.id) AS support_messages FROM divan_support_users u LEFT JOIN divan_support_messages m ON m.user_id = u.id GROUP BY u.id, u.name, u.mobile, u.father_name, u.is_admin, u.created_at ORDER BY u.id DESC LIMIT 1000');
     }
 
-    public function saveSupportUser($name, $mobile, $now)
+    public function saveSupportUser($name, $mobile, $now, $fatherName = null)
     {
-        $this->query('INSERT INTO divan_support_users (name, mobile, created_at, updated_at) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE name = VALUES(name), updated_at = VALUES(updated_at)', [$name, $mobile, $now, $now]);
+        $this->ensureSupportUsersColumns();
+        $this->query('INSERT INTO divan_support_users (name, mobile, father_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE name = VALUES(name), father_name = COALESCE(VALUES(father_name), father_name), updated_at = VALUES(updated_at)', [$name, $mobile, $fatherName, $now, $now]);
 
         return $this->supportUserByPhone($mobile);
+    }
+
+    public function setUserAdmin($id, bool $isAdmin): void
+    {
+        $this->ensureSupportUsersColumns();
+        $this->query('UPDATE divan_support_users SET is_admin = ? WHERE id = ?', [$isAdmin ? 1 : 0, $id]);
     }
 
     public function deleteOldSupportOtps($since)
@@ -740,6 +766,30 @@ class DivanRepository
                     $table->collation = 'utf8mb4_unicode_ci';
                 });
             }
+            if (! \Illuminate\Support\Facades\Schema::hasTable('divan_announcement_views')) {
+                \Illuminate\Support\Facades\Schema::create('divan_announcement_views', function (\Illuminate\Database\Schema\Blueprint $table) {
+                    $table->unsignedBigInteger('announcement_id');
+                    $table->unsignedBigInteger('user_id');
+                    $table->unsignedInteger('viewed_at');
+                    $table->primary(['announcement_id', 'user_id']);
+                    $table->index('user_id');
+                    $table->charset = 'utf8mb4';
+                    $table->collation = 'utf8mb4_unicode_ci';
+                });
+            }
+            if (! \Illuminate\Support\Facades\Schema::hasTable('divan_announcement_comments')) {
+                \Illuminate\Support\Facades\Schema::create('divan_announcement_comments', function (\Illuminate\Database\Schema\Blueprint $table) {
+                    $table->bigIncrements('id');
+                    $table->unsignedBigInteger('announcement_id')->index();
+                    $table->unsignedBigInteger('user_id')->index();
+                    $table->unsignedBigInteger('parent_id')->nullable()->index();
+                    $table->text('comment');
+                    $table->unsignedInteger('created_at')->index();
+                    $table->unsignedInteger('updated_at');
+                    $table->charset = 'utf8mb4';
+                    $table->collation = 'utf8mb4_unicode_ci';
+                });
+            }
         } catch (\Throwable) {}
     }
 
@@ -810,7 +860,57 @@ class DivanRepository
     {
         $this->ensureAnnouncementsTables();
         $this->query('DELETE FROM divan_announcement_users WHERE announcement_id = ?', [$id]);
+        $this->query('DELETE FROM divan_announcement_views WHERE announcement_id = ?', [$id]);
+        $this->query('DELETE FROM divan_announcement_comments WHERE announcement_id = ?', [$id]);
         $this->query('DELETE FROM divan_announcements WHERE id = ?', [$id]);
+    }
+
+    public function recordAnnouncementView(int $announcementId, int $userId, ?int $now = null): void
+    {
+        $this->ensureAnnouncementsTables();
+        $now = $now ?? time();
+        $this->query('INSERT INTO divan_announcement_views (announcement_id, user_id, viewed_at) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE viewed_at = VALUES(viewed_at)', [$announcementId, $userId, $now]);
+    }
+
+    public function announcementViewers(int $announcementId): array
+    {
+        $this->ensureAnnouncementsTables();
+        return $this->query('SELECT u.id, u.name, u.mobile, u.father_name, v.viewed_at FROM divan_announcement_views v INNER JOIN divan_support_users u ON u.id = v.user_id WHERE v.announcement_id = ? ORDER BY v.viewed_at DESC', [$announcementId]);
+    }
+
+    public function announcementComments(int $announcementId): array
+    {
+        $this->ensureAnnouncementsTables();
+        return $this->query('SELECT c.id, c.announcement_id, c.user_id, c.parent_id, c.comment, c.created_at, c.updated_at, u.name AS user_name, u.mobile AS user_mobile, u.is_admin AS user_is_admin FROM divan_announcement_comments c INNER JOIN divan_support_users u ON u.id = c.user_id WHERE c.announcement_id = ? ORDER BY c.id ASC', [$announcementId]);
+    }
+
+    public function announcementCommentById(int $id): ?array
+    {
+        $this->ensureAnnouncementsTables();
+        $rows = $this->query('SELECT id, announcement_id, user_id, parent_id, comment, created_at FROM divan_announcement_comments WHERE id = ?', [$id]);
+        return $rows[0] ?? null;
+    }
+
+    public function createAnnouncementComment(int $announcementId, int $userId, ?int $parentId, string $comment, ?int $now = null): int
+    {
+        $this->ensureAnnouncementsTables();
+        $now = $now ?? time();
+        $this->query('INSERT INTO divan_announcement_comments (announcement_id, user_id, parent_id, comment, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)', [
+            $announcementId,
+            $userId,
+            $parentId ?: null,
+            $comment,
+            $now,
+            $now,
+        ]);
+        $rows = $this->query('SELECT LAST_INSERT_ID() as last_id');
+        return (int) ($rows[0]['last_id'] ?? 0);
+    }
+
+    public function deleteAnnouncementComment(int $id): void
+    {
+        $this->ensureAnnouncementsTables();
+        $this->query('DELETE FROM divan_announcement_comments WHERE id = ? OR parent_id = ?', [$id, $id]);
     }
 }
 

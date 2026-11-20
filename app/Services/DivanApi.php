@@ -148,10 +148,10 @@ class DivanApi
 
             return $rows ? ['AndroidEbookApp' => $rows] : [];
         }
-        if (! in_array($action, ['login', 'me', 'logout', 'create', 'update', 'delete', 'stats', 'posts', 'pages', 'page_update', 'account', 'account_update', 'category_create', 'category_update', 'category_delete', 'category_reorder', 'media_list', 'media_upload', 'media_update', 'media_delete', 'support_start', 'support_verify', 'support_send', 'support_mine', 'support_logout', 'support_list', 'support_reply', 'support_reply_update', 'support_reply_delete', 'support_create', 'support_check', 'user_start', 'user_verify', 'user_me', 'user_logout', 'users', 'article_view', 'app_info', 'app_releases', 'app_upload', 'app_set_latest', 'app_delete', 'app_scan', 'user_announcements', 'announcements', 'announcement_create', 'announcement_update', 'announcement_delete'], true)) {
+        if (! in_array($action, ['login', 'me', 'logout', 'create', 'update', 'delete', 'stats', 'posts', 'pages', 'page_update', 'account', 'account_update', 'category_create', 'category_update', 'category_delete', 'category_reorder', 'media_list', 'media_upload', 'media_update', 'media_delete', 'support_start', 'support_verify', 'support_send', 'support_mine', 'support_logout', 'support_list', 'support_reply', 'support_reply_update', 'support_reply_delete', 'support_create', 'support_check', 'user_start', 'user_verify', 'user_me', 'user_logout', 'users', 'user_set_admin', 'article_view', 'app_info', 'app_releases', 'app_upload', 'app_set_latest', 'app_delete', 'app_scan', 'user_announcements', 'announcements', 'announcement_create', 'announcement_update', 'announcement_delete', 'announcement_view', 'announcement_comments', 'announcement_comment_create', 'announcement_comment_delete'], true)) {
             throw new ApiError(404, 'unknown_action', 'این عملیات وجود ندارد.');
         }
-        $requiredMethod = in_array($action, ['me', 'stats', 'posts', 'pages', 'account', 'media_list', 'support_list', 'support_mine', 'user_me', 'users', 'app_info', 'app_releases', 'user_announcements', 'announcements'], true) ? 'GET' : 'POST';
+        $requiredMethod = in_array($action, ['me', 'stats', 'posts', 'pages', 'account', 'media_list', 'support_list', 'support_mine', 'user_me', 'users', 'app_info', 'app_releases', 'user_announcements', 'announcements', 'announcement_comments'], true) ? 'GET' : 'POST';
         if ($method !== $requiredMethod) {
             throw new ApiError(405, 'method_not_allowed', 'روش درخواست معتبر نیست.');
         }
@@ -236,7 +236,18 @@ class DivanApi
                 if (! is_string($name) || trim($name) === '' || ! preg_match('//u', $name) || mb_strlen(trim($name)) > 120) {
                     throw new ApiError(422, 'invalid_support_name', 'نام را کامل و حداکثر در ۱۲۰ نویسه وارد کنید.');
                 }
-                $user = $this->store->saveSupportUser(trim($name), $otp['mobile'], $now);
+                $fatherName = $input['father_name'] ?? null;
+                if ($fatherName !== null && is_string($fatherName)) {
+                    $fatherName = trim($fatherName);
+                    if ($fatherName === '') {
+                        $fatherName = null;
+                    } elseif (mb_strlen($fatherName) > 120 || ! preg_match('//u', $fatherName)) {
+                        throw new ApiError(422, 'invalid_father_name', 'نام پدر حداکثر در ۱۲۰ نویسه باشد.');
+                    }
+                } else {
+                    $fatherName = null;
+                }
+                $user = $this->store->saveSupportUser(trim($name), $otp['mobile'], $now, $fatherName);
                 $userId = $user['id'];
             }
             $this->store->consumeSupportOtp($challenge, $now);
@@ -244,10 +255,31 @@ class DivanApi
             $this->store->issueSupportToken(hash('sha256', $token), $userId, $now, $now + 2592000);
             $user = $this->store->supportUser($userId);
 
-            return ['ok' => true, 'access_token' => $token, 'token_type' => 'Bearer', 'expires_in' => 2592000, 'user' => $user];
+            return ['ok' => true, 'access_token' => $token, 'token_type' => 'Bearer', 'expires_in' => 2592000, 'user' => $this->formatSupportUser($user)];
         }
-        if (in_array($action, ['support_send', 'support_mine', 'support_logout', 'user_me', 'user_logout', 'user_announcements'], true)) {
+        if (in_array($action, ['support_send', 'support_mine', 'support_logout', 'user_me', 'user_logout', 'user_announcements', 'announcement_view', 'announcement_comments', 'announcement_comment_create', 'announcement_comment_delete'], true)) {
             $user = $this->supportPrincipal($bearer, $now);
+            if ($action === 'announcement_comments') {
+                $aid = (int) $this->id($input['announcement_id'] ?? $input['id'] ?? null);
+                if ($aid <= 0) {
+                    throw new ApiError(422, 'invalid_announcement_id', 'شناسه اعلام الزامی است.');
+                }
+                $comments = array_map(static function ($c) {
+                    return [
+                        'id' => (string) $c['id'],
+                        'announcement_id' => (string) $c['announcement_id'],
+                        'user_id' => (string) $c['user_id'],
+                        'user_name' => (string) $c['user_name'],
+                        'user_is_admin' => ! empty($c['user_is_admin']),
+                        'parent_id' => $c['parent_id'] !== null ? (string) $c['parent_id'] : null,
+                        'comment' => (string) $c['comment'],
+                        'created_at' => gmdate('Y-m-d\TH:i:s\Z', (int) $c['created_at']),
+                        'updated_at' => gmdate('Y-m-d\TH:i:s\Z', (int) $c['updated_at']),
+                    ];
+                }, $this->store->announcementComments($aid));
+
+                return ['ok' => true, 'comments' => $comments];
+            }
             if ($action === 'user_announcements') {
                 return [
                     'ok' => true,
@@ -263,11 +295,56 @@ class DivanApi
                     }, $this->store->announcementsForUser($user['id'])),
                 ];
             }
+            if ($action === 'announcement_view') {
+                $aid = (int) $this->id($input['id'] ?? $input['announcement_id'] ?? null);
+                if ($aid > 0) {
+                    $this->store->recordAnnouncementView($aid, (int) $user['id'], $now);
+                }
+
+                return ['ok' => true];
+            }
+            if ($action === 'announcement_comment_create') {
+                $aid = (int) $this->id($input['announcement_id'] ?? null);
+                $comment = $input['comment'] ?? null;
+                if (! is_string($comment) || trim($comment) === '' || mb_strlen($comment) > 2000 || ! preg_match('//u', $comment)) {
+                    throw new ApiError(422, 'invalid_comment', 'متن نظر باید بین ۱ تا ۲۰۰۰ نویسه باشد.');
+                }
+                $parentId = isset($input['parent_id']) && $input['parent_id'] !== '' ? (int) $this->id($input['parent_id']) : null;
+                if ($parentId) {
+                    $parent = $this->store->announcementCommentById($parentId);
+                    if (! $parent || (int) $parent['announcement_id'] !== $aid) {
+                        throw new ApiError(404, 'parent_not_found', 'نظر مورد نظر یافت نشد.');
+                    }
+                }
+                $cid = $this->store->createAnnouncementComment($aid, (int) $user['id'], $parentId, trim($comment), $now);
+
+                return ['ok' => true, 'id' => (string) $cid];
+            }
+            if ($action === 'announcement_comment_delete') {
+                $cid = (int) $this->id($input['id'] ?? null);
+                $c = $this->store->announcementCommentById($cid);
+                $isAdmin = ! empty($user['is_admin']);
+                if (! $c || (! $isAdmin && (int) $c['user_id'] !== (int) $user['id'])) {
+                    throw new ApiError(404, 'comment_not_found', 'نظر برای حذف یافت نشد.');
+                }
+                $this->store->deleteAnnouncementComment($cid);
+
+                return ['ok' => true, 'id' => (string) $cid];
+            }
             if ($action === 'user_me') {
-                return ['ok' => true, 'user' => $user];
+                return ['ok' => true, 'user' => $this->formatSupportUser($user)];
             }
             if ($action === 'support_mine') {
-                return ['ok' => true, 'messages' => array_map([$this, 'formatSupportMessage'], $this->store->supportMessagesForUser($user['id']))];
+                $isAdmin = ! empty($user['is_admin']);
+                $messages = $isAdmin
+                    ? $this->store->supportMessages()
+                    : $this->store->supportMessagesForUser($user['id']);
+
+                return [
+                    'ok' => true,
+                    'is_admin' => $isAdmin,
+                    'messages' => array_map([$this, 'formatSupportMessage'], $messages),
+                ];
             }
             if ($action === 'support_logout' || $action === 'user_logout') {
                 $this->store->revokeSupportToken(hash('sha256', $bearer));
@@ -282,22 +359,27 @@ class DivanApi
             if ($ticketId !== null) {
                 $tid = $this->id($ticketId);
                 $ticket = $this->store->supportMessageById($tid);
-                if (! $ticket || (string) ($ticket['user_id'] ?? '') !== (string) $user['id']) {
+                $isAdmin = ! empty($user['is_admin']);
+                if (! $ticket || (! $isAdmin && (string) ($ticket['user_id'] ?? '') !== (string) $user['id'])) {
                     throw new ApiError(404, 'support_message_not_found', 'درخواست پشتیبانی پیدا نشد.');
                 }
-                if ($this->store->supportMessageCountForUser($user['id'], $now - 3600) >= 20) {
+                if (! $isAdmin && $this->store->supportMessageCountForUser($user['id'], $now - 3600) >= 20) {
                     throw new ApiError(429, 'support_rate_limited', 'تعداد پیام‌ها زیاد است؛ کمی بعد دوباره تلاش کنید.');
                 }
-                $this->store->createSupportReply($tid, 'user', trim($message), $now);
+                $sender = $isAdmin ? 'admin' : 'user';
+                $this->store->createSupportReply($tid, $sender, trim($message), $now);
+                if ($isAdmin) {
+                    $this->store->replyToSupport($tid, trim($message), $now);
+                }
 
-                return ['ok' => true, 'created_at' => gmdate('Y-m-d\\TH:i:s\\Z', $now)];
+                return ['ok' => true, 'created_at' => gmdate('Y-m-d\TH:i:s\Z', $now), 'sender' => $sender];
             }
             if ($this->store->supportMessageCountForUser($user['id'], $now - 3600) >= 10) {
                 throw new ApiError(429, 'support_rate_limited', 'تعداد پیام‌ها زیاد است؛ یک ساعت دیگر دوباره تلاش کنید.');
             }
             $this->store->createSupportMessage($user['id'], hash('sha256', (string) $ip), trim($message), $now);
 
-            return ['ok' => true, 'created_at' => gmdate('Y-m-d\\TH:i:s\\Z', $now)];
+            return ['ok' => true, 'created_at' => gmdate('Y-m-d\TH:i:s\Z', $now)];
         }
         if ($action === 'support_create' || $action === 'support_check') {
             throw new ApiError(410, 'support_receipts_retired', 'برای پیام پشتیبانی وارد حساب خود شوید.');
@@ -337,12 +419,20 @@ class DivanApi
             return ['ok' => true, 'messages' => array_map([$this, 'formatSupportMessage'], $this->store->supportMessages())];
         }
         if ($action === 'users') {
-            return ['ok' => true, 'users' => array_map(static function ($user) {
-                $user['id'] = (string) $user['id'];
-                $user['support_messages'] = (string) $user['support_messages'];
-                $user['created_at'] = gmdate('Y-m-d\\TH:i:s\\Z', (int) $user['created_at']);
-                return $user;
+            return ['ok' => true, 'users' => array_map(function ($user) {
+                return $this->formatSupportUser($user);
             }, $this->store->supportUsers())];
+        }
+        if ($action === 'user_set_admin') {
+            $id = (int) $this->id($input['id'] ?? null);
+            $user = $this->store->supportUser($id);
+            if (! $user) {
+                throw new ApiError(404, 'user_not_found', 'کاربر مورد نظر یافت نشد.');
+            }
+            $isAdmin = filter_var($input['is_admin'] ?? false, FILTER_VALIDATE_BOOLEAN);
+            $this->store->setUserAdmin($id, $isAdmin);
+
+            return ['ok' => true, 'id' => (string) $id, 'is_admin' => $isAdmin];
         }
         if ($action === 'app_info' || $action === 'app_releases') {
             return ['ok' => true, 'releases' => $this->appReleases(), 'latest' => $this->latestRelease()];
@@ -563,6 +653,29 @@ class DivanApi
                     throw new ApiError(404, 'announcement_not_found', 'اعلام پیدا نشد.');
                 }
 
+                $announcementId = (int) $this->id($id);
+                $viewers = array_map(static function ($v) {
+                    return [
+                        'id' => (string) $v['id'],
+                        'name' => (string) $v['name'],
+                        'mobile' => (string) $v['mobile'],
+                        'father_name' => (string) ($v['father_name'] ?? ''),
+                        'viewed_at' => gmdate('Y-m-d\TH:i:s\Z', (int) $v['viewed_at']),
+                    ];
+                }, $this->store->announcementViewers($announcementId));
+                $comments = array_map(static function ($c) {
+                    return [
+                        'id' => (string) $c['id'],
+                        'user_id' => (string) $c['user_id'],
+                        'user_name' => (string) $c['user_name'],
+                        'user_mobile' => (string) ($c['user_mobile'] ?? ''),
+                        'user_is_admin' => ! empty($c['user_is_admin']),
+                        'parent_id' => $c['parent_id'] !== null ? (string) $c['parent_id'] : null,
+                        'comment' => (string) $c['comment'],
+                        'created_at' => gmdate('Y-m-d\TH:i:s\Z', (int) $c['created_at']),
+                    ];
+                }, $this->store->announcementComments($announcementId));
+
                 return [
                     'ok' => true,
                     'announcement' => [
@@ -573,6 +686,8 @@ class DivanApi
                         'user_ids' => is_array($row['user_ids'] ?? null)
                             ? array_values(array_map('strval', $row['user_ids']))
                             : array_values(array_filter(explode(',', (string) ($row['user_ids'] ?? '')))),
+                        'viewers' => $viewers,
+                        'comments' => $comments,
                         'created_at' => gmdate('Y-m-d\TH:i:s\Z', (int) $row['created_at']),
                         'updated_at' => gmdate('Y-m-d\TH:i:s\Z', (int) $row['updated_at']),
                     ],
@@ -947,6 +1062,23 @@ class DivanApi
         }
 
         return $this->appReleases();
+    }
+
+    private function formatSupportUser(?array $user): ?array
+    {
+        if (! $user) {
+            return null;
+        }
+
+        return [
+            'id' => (string) $user['id'],
+            'name' => (string) $user['name'],
+            'mobile' => (string) $user['mobile'],
+            'father_name' => (string) ($user['father_name'] ?? ''),
+            'is_admin' => ! empty($user['is_admin']),
+            'created_at' => isset($user['created_at']) ? gmdate('Y-m-d\TH:i:s\Z', (int) $user['created_at']) : null,
+            'support_messages' => isset($user['support_messages']) ? (string) $user['support_messages'] : '0',
+        ];
     }
 }
 

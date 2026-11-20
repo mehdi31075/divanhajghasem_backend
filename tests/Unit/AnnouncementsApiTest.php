@@ -112,4 +112,55 @@ final class AnnouncementsApiTest extends TestCase
         self::assertSame('5', $singleRes['announcement']['id']);
         self::assertSame(['10', '20'], $singleRes['announcement']['user_ids']);
     }
+
+    public function test_announcement_views_and_comments(): void
+    {
+        $now = 1_800_000_000;
+        $userToken = str_repeat('d', 64);
+        $store = $this->createMock(DivanRepository::class);
+        $store->method('supportToken')->with(hash('sha256', $userToken))->willReturn([
+            'user_id' => 15,
+            'expires_at' => $now + 1000,
+        ]);
+        $store->method('supportUser')->with(15)->willReturn([
+            'id' => 15,
+            'name' => 'کاربر آزمایشی',
+            'mobile' => '09121234567',
+            'father_name' => 'پدر',
+            'is_admin' => 0,
+        ]);
+
+        $store->expects($this->once())->method('recordAnnouncementView')->with(5, 15, $now);
+        $store->expects($this->once())->method('createAnnouncementComment')->with(5, 15, null, 'یک نظر تستی', $now)->willReturn(101);
+        $store->method('announcementComments')->with(5)->willReturn([
+            [
+                'id' => 101,
+                'announcement_id' => 5,
+                'user_id' => 15,
+                'user_name' => 'کاربر آزمایشی',
+                'user_is_admin' => 0,
+                'parent_id' => null,
+                'comment' => 'یک نظر تستی',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+        ]);
+
+        $api = new DivanApi($store, 'https://divanansar.ir');
+
+        $viewRes = $api->handle('POST', 'announcement_view', ['id' => 5], $userToken, '127.0.0.1', $now);
+        self::assertTrue($viewRes['ok']);
+
+        $commentRes = $api->handle('POST', 'announcement_comment_create', [
+            'announcement_id' => 5,
+            'comment' => 'یک نظر تستی',
+        ], $userToken, '127.0.0.1', $now);
+        self::assertTrue($commentRes['ok']);
+        self::assertSame('101', $commentRes['id']);
+
+        $listRes = $api->handle('GET', 'announcement_comments', ['announcement_id' => 5], $userToken, '127.0.0.1', $now);
+        self::assertTrue($listRes['ok']);
+        self::assertCount(1, $listRes['comments']);
+        self::assertSame('یک نظر تستی', $listRes['comments'][0]['comment']);
+    }
 }

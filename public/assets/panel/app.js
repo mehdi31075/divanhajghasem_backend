@@ -711,7 +711,66 @@ async function render(route) {
     };
   } else if (view === 'users') {
     const result = await api.call('users');
-    html = `<div class="actions"><h1>کاربران اپ</h1><span class="category-badge">${digits(result.users.length)} حساب</span></div><p class="help">حساب‌های ساخته‌شده با تأیید شمارهٔ موبایل؛ همان حساب برای ارسال و پیگیری پیام‌های پشتیبانی استفاده می‌شود.</p><section class="card table-wrap"><table><thead><tr><th>نام</th><th>شمارهٔ موبایل</th><th>عضویت</th><th>پیام‌های پشتیبانی</th></tr></thead><tbody>${result.users.map(user => `<tr><td><strong>${e(user.name || '—')}</strong></td><td dir="ltr">${e(user.mobile)}</td><td><small>${e(displayDate(user.created_at))}</small></td><td>${digits(user.support_messages)}</td></tr>`).join('')}</tbody></table>${result.users.length ? '' : '<p class="empty">هنوز کاربری ثبت‌نام نکرده است.</p>'}</section>`;
+    html = `
+      <div class="actions">
+        <h1>کاربران اپلیکیشن</h1>
+        <span class="category-badge">${digits(result.users.length)} حساب</span>
+      </div>
+      <p class="help">فهرست حساب‌های ساخته‌شده در اپلیکیشن. مدیران تعیین‌شده در این بخش، می‌توانند مستقیماً از طریق اپلیکیشن نیز به پیام‌های پشتیبانی کاربران پاسخ دهند.</p>
+      <section class="card table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>نام و نام خانوادگی</th>
+              <th>نام پدر</th>
+              <th>شمارهٔ همراه</th>
+              <th>نقش کاربری</th>
+              <th>تاریخ عضویت</th>
+              <th>پیام‌های پشتیبانی</th>
+              <th>عملیات</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${result.users.map(user => {
+              const isAdmin = Boolean(user.is_admin);
+              const badge = isAdmin
+                ? '<span class="category-badge" style="background:#dbeafe;color:#1e40af;font-weight:700">مدیر اپلیکیشن</span>'
+                : '<span class="category-badge">کاربر عادی</span>';
+              const actionBtn = isAdmin
+                ? `<button type="button" class="danger compact" data-admin-toggle="${e(user.id)}" data-admin-value="0">لغو مدیریت</button>`
+                : `<button type="button" class="compact" data-admin-toggle="${e(user.id)}" data-admin-value="1">تبدیل به مدیر</button>`;
+              return `<tr>
+                <td><strong>${e(user.name || '—')}</strong></td>
+                <td><small>${e(user.father_name || '—')}</small></td>
+                <td dir="ltr">${e(user.mobile)}</td>
+                <td>${badge}</td>
+                <td><small>${e(displayDate(user.created_at))}</small></td>
+                <td>${digits(user.support_messages)}</td>
+                <td>${actionBtn}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+        ${result.users.length ? '' : '<p class="empty">هنوز کاربری ثبت‌نام نکرده است.</p>'}
+      </section>
+    `;
+    after = () => {
+      document.querySelectorAll('[data-admin-toggle]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const userId = btn.dataset.adminToggle;
+          const setAdmin = btn.dataset.adminValue === '1';
+          btn.disabled = true;
+          try {
+            await api.call('user_set_admin', {method: 'POST', fields: {id: userId, is_admin: setAdmin ? '1' : '0'}});
+            notice(setAdmin ? 'کاربر به عنوان مدیر اپلیکیشن تعیین شد.' : 'مدیریت اپلیکیشن لغو شد.');
+            await render('users');
+          } catch (err) {
+            btn.disabled = false;
+            alert(err.message || 'خطا در تغییر وضعیت مدیر');
+          }
+        });
+      });
+    };
   } else if (view === 'read') {
     const article = (await api.call('', {query: {nid: id}}))[0];
     if (!article) throw new ApiError('مطلب دیگر موجود نیست.');
@@ -974,6 +1033,8 @@ async function render(route) {
     if (!a) throw new ApiError('اعلام پیدا نشد.');
     const usersMap = new Map((usersRes.users || []).map(u => [String(u.id), u]));
     const targetNames = (a.user_ids || []).map(uid => usersMap.get(String(uid))?.name || `کاربر ${uid}`).join('، ');
+    const viewers = a.viewers || [];
+    const comments = a.comments || [];
 
     html = `
       <div class="actions">
@@ -985,8 +1046,76 @@ async function render(route) {
       <p class="article-dates">ایجاد: ${e(displayDate(a.created_at))}　·　آخرین ویرایش: ${e(displayDate(a.updated_at))}</p>
       <p class="help"><strong>کاربران مخاطب (${digits((a.user_ids || []).length)} نفر):</strong> ${e(targetNames || 'هیچ کاربری انتخاب نشده است')}</p>
       <iframe class="preview" sandbox="" referrerpolicy="no-referrer" title="متن اعلام"></iframe>
+
+      <div class="section-heading" style="margin-top:36px">
+        <h2>مشاهده‌کنندگان اعلام <small style="font-size:13px;font-weight:400;color:var(--muted)">(اختصاصی مدیر)</small></h2>
+        <span class="category-badge" style="background:#dcfce7;color:#166534;font-weight:700">${digits(viewers.length)} نفر باز کرده‌اند</span>
+      </div>
+      <section class="card table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>نام کاربر</th>
+              <th>نام پدر</th>
+              <th>شمارهٔ همراه</th>
+              <th>زمان اولین مشاهده</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${viewers.map(v => `<tr>
+              <td><strong>${e(v.name || '—')}</strong></td>
+              <td><small>${e(v.father_name || '—')}</small></td>
+              <td dir="ltr">${e(v.mobile)}</td>
+              <td><small>${e(displayDate(v.viewed_at))}</small></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        ${viewers.length ? '' : '<p class="empty">هنوز هیچ کاربری این اعلام را در اپلیکیشن باز نکرده است.</p>'}
+      </section>
+
+      <div class="section-heading" style="margin-top:36px">
+        <h2>نظرات و گفتگوهای کاربران</h2>
+        <span class="category-badge">${digits(comments.length)} نظر</span>
+      </div>
+      <section class="card">
+        ${comments.length ? `<div style="display:grid;gap:16px;padding:8px 0">
+          ${comments.map(c => `
+            <div style="background:#f8faf8;border:1px solid var(--line);border-radius:14px;padding:16px 20px;${c.parent_id ? 'margin-right:28px;border-right:3px solid var(--accent);' : ''}">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                <div style="display:flex;align-items:center;gap:10px">
+                  <strong>${e(c.user_name || 'کاربر')}</strong>
+                  ${c.user_is_admin ? '<span class="category-badge" style="background:#e0f2fe;color:#0369a1;padding:2px 8px;font-size:11px">مدیر</span>' : ''}
+                  ${c.parent_id ? '<span style="font-size:12px;color:var(--muted)">در پاسخ به نظر قبلی</span>' : ''}
+                </div>
+                <div style="display:flex;align-items:center;gap:12px">
+                  <small style="color:var(--muted);font-size:12px">${e(displayDate(c.created_at))}</small>
+                  <button type="button" class="danger compact" data-delete-comment="${e(c.id)}" style="min-height:34px;padding:4px 10px;font-size:12px">حذف نظر</button>
+                </div>
+              </div>
+              <p style="margin:0;line-height:1.8;white-space:pre-wrap">${e(c.comment)}</p>
+            </div>
+          `).join('')}
+        </div>` : '<p class="empty" style="margin:0">هنوز نظری برای این اعلام ثبت نشده است.</p>'}
+      </section>
     `;
-    after = () => preview($('.preview'), a.description);
+    after = () => {
+      preview($('.preview'), a.description);
+      document.querySelectorAll('[data-delete-comment]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('آیا از حذف این نظر اطمینان دارید؟')) return;
+          const commentId = btn.dataset.deleteComment;
+          btn.disabled = true;
+          try {
+            await api.call('announcement_comment_delete', {method: 'POST', fields: {id: commentId}});
+            notice('نظر حذف شد.');
+            await render(`announcement-read/${id}`);
+          } catch (err) {
+            btn.disabled = false;
+            alert(err.message || 'خطا در حذف نظر');
+          }
+        });
+      });
+    };
   } else if (view === 'app') {
     const result = await api.call('app_releases');
     const releases = result?.releases || [];

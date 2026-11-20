@@ -146,5 +146,40 @@ final class SupportApiTest extends TestCase
         $deleteRes = $api->handle('POST', 'support_reply_delete', ['id' => 5], $token, '127.0.0.1', $now);
         $this->assertTrue($deleteRes['ok']);
     }
+
+    public function test_admin_app_user_can_view_all_and_reply_to_support(): void
+    {
+        $now = 1_800_000_000;
+        $adminAppToken = str_repeat('e', 64);
+        $store = $this->createMock(DivanRepository::class);
+        $store->method('supportToken')->with(hash('sha256', $adminAppToken))->willReturn([
+            'user_id' => 88,
+            'expires_at' => $now + 1000,
+        ]);
+        $store->method('supportUser')->with(88)->willReturn([
+            'id' => 88,
+            'name' => 'مدیر اپلیکیشن',
+            'mobile' => '+989120000000',
+            'father_name' => 'پدر مدیر',
+            'is_admin' => 1,
+        ]);
+        $store->method('supportMessageById')->with(7)->willReturn([
+            'id' => 7,
+            'user_id' => 33,
+            'message' => 'پیام کاربر ۳۳',
+        ]);
+        $store->expects($this->once())->method('createSupportReply')->with(7, 'admin', 'پاسخ مدیر از درون اپ', $now);
+        $store->expects($this->once())->method('replyToSupport')->with(7, 'پاسخ مدیر از درون اپ', $now);
+
+        $api = new DivanApi($store);
+
+        $replyRes = $api->handle('POST', 'support_send', [
+            'ticket_id' => 7,
+            'message' => 'پاسخ مدیر از درون اپ',
+        ], $adminAppToken, '127.0.0.1', $now);
+
+        $this->assertTrue($replyRes['ok']);
+        $this->assertSame('admin', $replyRes['sender']);
+    }
 }
 
