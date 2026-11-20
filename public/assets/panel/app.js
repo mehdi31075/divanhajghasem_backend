@@ -53,6 +53,27 @@ function bindCategoryOrder(rows) {
     status.textContent = state.dirty ? 'ترتیب جدید هنوز ذخیره نشده است.' : '';
   }
 
+  function swapRows(source, target, clientY) {
+    if (!source || !target || source === target || !list.contains(target)) return;
+    const rect = target.getBoundingClientRect();
+    const children = [...list.children].filter(c => c.hasAttribute('data-category-id'));
+    const srcIdx = children.indexOf(source);
+    const tgtIdx = children.indexOf(target);
+    if (srcIdx === -1 || tgtIdx === -1) return;
+
+    if (srcIdx < tgtIdx) {
+      if (clientY > rect.top + rect.height * 0.2) {
+        list.insertBefore(source, target.nextSibling);
+        changed();
+      }
+    } else {
+      if (clientY < rect.bottom - rect.height * 0.2) {
+        list.insertBefore(source, target);
+        changed();
+      }
+    }
+  }
+
   changed();
 
   list.addEventListener('click', event => {
@@ -84,6 +105,10 @@ function bindCategoryOrder(rows) {
 
   list.addEventListener('dragstart', event => {
     if (saving) { event.preventDefault(); return; }
+    if (event.target.closest('button:not(.category-drag)')) {
+      event.preventDefault();
+      return;
+    }
     const row = event.target.closest('[data-category-id]');
     if (!row) return;
     draggedRow = row;
@@ -99,11 +124,8 @@ function bindCategoryOrder(rows) {
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
     const target = event.target.closest('[data-category-id]');
-    if (target && target !== draggedRow && list.contains(target)) {
-      const rect = target.getBoundingClientRect();
-      const isAfter = event.clientY > rect.top + rect.height / 2;
-      list.insertBefore(draggedRow, isAfter ? target.nextSibling : target);
-      changed();
+    if (target) {
+      swapRows(draggedRow, target, event.clientY);
     }
   });
 
@@ -129,35 +151,40 @@ function bindCategoryOrder(rows) {
     let startY = null, dragging = false;
     handle.addEventListener('pointerdown', event => {
       if (saving || event.button !== 0) return;
-      event.preventDefault();
       startY = event.clientY;
+      dragging = false;
       try { handle.setPointerCapture(event.pointerId); } catch (_) {}
     });
     handle.addEventListener('pointermove', event => {
       if (startY === null || saving) return;
-      if (!dragging && Math.abs(event.clientY - startY) < 4) return;
-      dragging = true;
-      row.classList.add('dragging');
+      if (!dragging) {
+        if (Math.abs(event.clientY - startY) < 4) return;
+        dragging = true;
+        row.classList.add('dragging');
+      }
 
       let target = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-category-id]');
-      if (!target || target === row) {
+      if (!target || target === row || !list.contains(target)) {
         target = [...list.children].find(c => {
           if (c === row || !c.hasAttribute('data-category-id')) return false;
           const r = c.getBoundingClientRect();
           return event.clientY >= r.top && event.clientY <= r.bottom;
         });
       }
-      if (target && target !== row && list.contains(target)) {
-        const rect = target.getBoundingClientRect();
-        list.insertBefore(row, event.clientY < rect.top + rect.height / 2 ? target : target.nextSibling);
-        changed();
+      if (target) {
+        swapRows(row, target, event.clientY);
       }
       if (event.clientY < 90) window.scrollBy(0, -18);
       else if (event.clientY > window.innerHeight - 90) window.scrollBy(0, 18);
     });
     const finish = () => {
       if (startY === null) return;
-      startY = null; dragging = false; row.classList.remove('dragging'); changed();
+      startY = null;
+      if (dragging) {
+        dragging = false;
+        row.classList.remove('dragging');
+        changed();
+      }
     };
     handle.addEventListener('pointerup', finish);
     handle.addEventListener('pointercancel', finish);
@@ -175,7 +202,7 @@ function bindCategoryOrder(rows) {
   save.onclick = async () => {
     if (saving) return;
     const ordered = ids();
-    saving = true; save.disabled = true; list.inert = true;
+    saving = true; save.disabled = true; save.classList.add('saving'); list.inert = true;
     status.textContent = 'در حال ذخیره…';
     try {
       await api.call('category_reorder', {method: 'POST', fields: {ids: JSON.stringify(ordered), previous_ids: JSON.stringify(baseline)}});
@@ -189,7 +216,7 @@ function bindCategoryOrder(rows) {
       status.textContent = error.message;
       if (error.status === 401) lock(error.message);
     } finally {
-      saving = false; list.inert = false; changed();
+      saving = false; save.classList.remove('saving'); list.inert = false; changed();
     }
   };
 }
