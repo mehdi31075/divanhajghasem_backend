@@ -570,7 +570,9 @@ class DivanApi
                         'title' => (string) $row['title'],
                         'subtitle' => (string) ($row['subtitle'] ?? ''),
                         'description' => (string) $row['description'],
-                        'user_ids' => array_values(array_map('strval', $row['user_ids'] ?? [])),
+                        'user_ids' => is_array($row['user_ids'] ?? null)
+                            ? array_values(array_map('strval', $row['user_ids']))
+                            : array_values(array_filter(explode(',', (string) ($row['user_ids'] ?? '')))),
                         'created_at' => gmdate('Y-m-d\TH:i:s\Z', (int) $row['created_at']),
                         'updated_at' => gmdate('Y-m-d\TH:i:s\Z', (int) $row['updated_at']),
                     ],

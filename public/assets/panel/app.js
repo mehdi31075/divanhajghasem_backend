@@ -829,7 +829,7 @@ async function render(route) {
     `;
   } else if (view === 'announcement' || view === 'announcement-new') {
     const [originalRes, usersRes] = await Promise.all([
-      view === 'announcement' ? api.call('announcements', {query: {id}}).catch(() => null) : Promise.resolve(null),
+      view === 'announcement' ? api.call('announcements', {query: {id}}) : Promise.resolve(null),
       api.call('users').catch(() => ({users: []})),
     ]);
     const original = originalRes?.announcement || null;

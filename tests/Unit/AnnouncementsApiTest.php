@@ -95,5 +95,21 @@ final class AnnouncementsApiTest extends TestCase
 
         self::assertTrue($createRes['ok']);
         self::assertSame('5', $createRes['id']);
+
+        // Test querying single announcement (GROUP_CONCAT returns comma string)
+        $store->method('announcement')->with(5)->willReturn([
+            'id' => 5,
+            'title' => 'مراسم هفتگی',
+            'subtitle' => 'پاییز',
+            'description' => '<p>محتوا</p>',
+            'created_at' => $now,
+            'updated_at' => $now,
+            'user_ids' => '10,20',
+        ]);
+
+        $singleRes = $api->handle('GET', 'announcements', ['id' => 5], $adminToken, '127.0.0.1', $now);
+        self::assertTrue($singleRes['ok']);
+        self::assertSame('5', $singleRes['announcement']['id']);
+        self::assertSame(['10', '20'], $singleRes['announcement']['user_ids']);
     }
 }
