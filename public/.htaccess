@@ -1,5 +1,6 @@
 <IfModule mod_headers.c>
-    Header set Access-Control-Allow-Origin "*"
+    # Note: Access-Control-Allow-Origin is handled by Laravel's CORS middleware.
+    # Do not set it here to prevent duplicate "*, *" headers that browsers block.
 </IfModule>
 
 <IfModule mod_php.c>
