@@ -7,11 +7,11 @@
   <title>دیوان انصارالحسین(ع) · مدیریت محتوا</title>
   <link rel="icon" href="{{ asset('assets/panel/mark.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ asset('assets/ckeditor/ckeditor5.css') }}">
-  <link rel="stylesheet" href="{{ asset('assets/panel/panel.css') }}?v=20261120-announcements-v3">
+  <link rel="stylesheet" href="{{ asset('assets/panel/panel.css') }}?v=20261120-announcements-v5">
   <script src="{{ asset('assets/purify/purify.min.js') }}" defer></script>
   <script src="{{ asset('assets/ckeditor/ckeditor5.umd.js') }}" defer></script>
   <script src="{{ asset('assets/ckeditor/fa.umd.js') }}" defer></script>
-  <script type="module" src="{{ asset('assets/panel/app.js') }}?v=20261120-announcements-v4"></script>
+  <script type="module" src="{{ asset('assets/panel/app.js') }}?v=20261120-announcements-v5"></script>
 </head>
 <body>
   <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
@@ -51,8 +51,8 @@
         <a href="#home"><svg><use href="#i-home"/></svg><span>پیشخوان</span></a>
         <a href="#posts"><svg><use href="#i-book"/></svg><span>نوشته‌ها</span></a>
         <a href="#announcements"><svg><use href="#i-bell"/></svg><span>اعلام‌ها</span></a>
+        <a href="#announcements-public"><svg><use href="#i-bell"/></svg><span>اعلام‌های عمومی (صفحه اول)</span></a>
         <a href="#categories"><svg><use href="#i-grid"/></svg><span>دسته‌بندی‌ها</span></a>
-        <a href="#pages"><svg><use href="#i-book"/></svg><span>صفحه‌های دیوان</span></a>
         <a href="#media"><svg><use href="#i-media"/></svg><span>کتابخانهٔ رسانه</span></a>
         <a href="#support"><svg><use href="#i-support"/></svg><span>پشتیبانی</span></a>
         <a href="#users"><svg><use href="#i-users"/></svg><span>کاربران اپ</span></a>

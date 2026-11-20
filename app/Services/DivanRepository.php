@@ -750,11 +750,18 @@ class DivanRepository
                     $table->string('title', 500);
                     $table->string('subtitle', 255)->nullable();
                     $table->longText('description');
+                    $table->boolean('is_public')->default(false)->index();
                     $table->unsignedInteger('created_at')->index();
                     $table->unsignedInteger('updated_at')->index();
                     $table->charset = 'utf8mb4';
                     $table->collation = 'utf8mb4_unicode_ci';
                 });
+            } else {
+                if (! \Illuminate\Support\Facades\Schema::hasColumn('divan_announcements', 'is_public')) {
+                    \Illuminate\Support\Facades\Schema::table('divan_announcements', function (\Illuminate\Database\Schema\Blueprint $table) {
+                        $table->boolean('is_public')->default(false)->index();
+                    });
+                }
             }
             if (! \Illuminate\Support\Facades\Schema::hasTable('divan_announcement_users')) {
                 \Illuminate\Support\Facades\Schema::create('divan_announcement_users', function (\Illuminate\Database\Schema\Blueprint $table) {
@@ -790,42 +797,67 @@ class DivanRepository
                     $table->collation = 'utf8mb4_unicode_ci';
                 });
             }
+
+            // Seed public announcements from divan_pages if none exist
+            $pubCheck = $this->query('SELECT COUNT(*) as cnt FROM divan_announcements WHERE is_public = 1');
+            if (empty($pubCheck[0]['cnt']) || (int) $pubCheck[0]['cnt'] === 0) {
+                if (\Illuminate\Support\Facades\Schema::hasTable('divan_pages')) {
+                    $pages = $this->query("SELECT title, html_body, updated_at FROM divan_pages ORDER BY FIELD(slug, 'first-talk', 'last-talk', 'contact')");
+                    foreach ($pages as $p) {
+                        $now = ! empty($p['updated_at']) ? (int) $p['updated_at'] : time();
+                        $this->query('INSERT INTO divan_announcements (title, subtitle, description, is_public, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)', [
+                            $p['title'],
+                            '',
+                            $p['html_body'],
+                            $now,
+                            $now,
+                        ]);
+                    }
+                }
+            }
         } catch (\Throwable) {}
+    }
+
+    public function publicAnnouncements(): array
+    {
+        $this->ensureAnnouncementsTables();
+        return $this->query('SELECT id, title, subtitle, description, is_public, created_at, updated_at FROM divan_announcements WHERE is_public = 1 ORDER BY id ASC LIMIT 100');
     }
 
     public function announcements(): array
     {
         $this->ensureAnnouncementsTables();
-        return $this->query('SELECT a.id, a.title, a.subtitle, a.description, a.created_at, a.updated_at, GROUP_CONCAT(u.user_id) AS user_ids FROM divan_announcements a LEFT JOIN divan_announcement_users u ON u.announcement_id = a.id GROUP BY a.id, a.title, a.subtitle, a.description, a.created_at, a.updated_at ORDER BY a.id DESC LIMIT 500');
+        return $this->query('SELECT a.id, a.title, a.subtitle, a.description, a.is_public, a.created_at, a.updated_at, GROUP_CONCAT(u.user_id) AS user_ids FROM divan_announcements a LEFT JOIN divan_announcement_users u ON u.announcement_id = a.id GROUP BY a.id, a.title, a.subtitle, a.description, a.is_public, a.created_at, a.updated_at ORDER BY a.id DESC LIMIT 500');
     }
 
     public function announcement($id)
     {
         $this->ensureAnnouncementsTables();
-        $rows = $this->query('SELECT a.id, a.title, a.subtitle, a.description, a.created_at, a.updated_at, GROUP_CONCAT(u.user_id) AS user_ids FROM divan_announcements a LEFT JOIN divan_announcement_users u ON u.announcement_id = a.id WHERE a.id = ? GROUP BY a.id, a.title, a.subtitle, a.description, a.created_at, a.updated_at', [$id]);
+        $rows = $this->query('SELECT a.id, a.title, a.subtitle, a.description, a.is_public, a.created_at, a.updated_at, GROUP_CONCAT(u.user_id) AS user_ids FROM divan_announcements a LEFT JOIN divan_announcement_users u ON u.announcement_id = a.id WHERE a.id = ? GROUP BY a.id, a.title, a.subtitle, a.description, a.is_public, a.created_at, a.updated_at', [$id]);
         return $rows[0] ?? null;
     }
 
     public function announcementsForUser($userId): array
     {
         $this->ensureAnnouncementsTables();
-        return $this->query('SELECT a.id, a.title, a.subtitle, a.description, a.created_at, a.updated_at FROM divan_announcements a INNER JOIN divan_announcement_users u ON u.announcement_id = a.id WHERE u.user_id = ? ORDER BY a.id DESC LIMIT 200', [$userId]);
+        return $this->query('SELECT a.id, a.title, a.subtitle, a.description, a.is_public, a.created_at, a.updated_at FROM divan_announcements a INNER JOIN divan_announcement_users u ON u.announcement_id = a.id WHERE u.user_id = ? AND (a.is_public = 0 OR a.is_public IS NULL) ORDER BY a.id DESC LIMIT 200', [$userId]);
     }
 
-    public function createAnnouncement(string $title, ?string $subtitle, string $description, array $userIds, ?int $now = null): int
+    public function createAnnouncement(string $title, ?string $subtitle, string $description, array $userIds, ?int $now = null, bool $isPublic = false): int
     {
         $this->ensureAnnouncementsTables();
         $now = $now ?? time();
-        $this->query('INSERT INTO divan_announcements (title, subtitle, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)', [
+        $this->query('INSERT INTO divan_announcements (title, subtitle, description, is_public, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)', [
             $title,
             $subtitle ?: null,
             $description,
+            $isPublic ? 1 : 0,
             $now,
             $now,
         ]);
         $rows = $this->query('SELECT LAST_INSERT_ID() as last_id');
         $id = (int) ($rows[0]['last_id'] ?? 0);
-        if ($id > 0) {
+        if ($id > 0 && ! $isPublic) {
             foreach (array_unique($userIds) as $uid) {
                 $uidInt = (int) $uid;
                 if ($uidInt > 0) {
@@ -836,22 +868,25 @@ class DivanRepository
         return $id;
     }
 
-    public function updateAnnouncement(int $id, string $title, ?string $subtitle, string $description, array $userIds, ?int $now = null): void
+    public function updateAnnouncement(int $id, string $title, ?string $subtitle, string $description, array $userIds, ?int $now = null, bool $isPublic = false): void
     {
         $this->ensureAnnouncementsTables();
         $now = $now ?? time();
-        $this->query('UPDATE divan_announcements SET title = ?, subtitle = ?, description = ?, updated_at = ? WHERE id = ?', [
+        $this->query('UPDATE divan_announcements SET title = ?, subtitle = ?, description = ?, is_public = ?, updated_at = ? WHERE id = ?', [
             $title,
             $subtitle ?: null,
             $description,
+            $isPublic ? 1 : 0,
             $now,
             $id,
         ]);
         $this->query('DELETE FROM divan_announcement_users WHERE announcement_id = ?', [$id]);
-        foreach (array_unique($userIds) as $uid) {
-            $uidInt = (int) $uid;
-            if ($uidInt > 0) {
-                $this->query('INSERT IGNORE INTO divan_announcement_users (announcement_id, user_id) VALUES (?, ?)', [$id, $uidInt]);
+        if (! $isPublic) {
+            foreach (array_unique($userIds) as $uid) {
+                $uidInt = (int) $uid;
+                if ($uidInt > 0) {
+                    $this->query('INSERT IGNORE INTO divan_announcement_users (announcement_id, user_id) VALUES (?, ?)', [$id, $uidInt]);
+                }
             }
         }
     }

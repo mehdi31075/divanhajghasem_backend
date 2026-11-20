@@ -148,10 +148,10 @@ class DivanApi
 
             return $rows ? ['AndroidEbookApp' => $rows] : [];
         }
-        if (! in_array($action, ['login', 'me', 'logout', 'create', 'update', 'delete', 'stats', 'posts', 'pages', 'page_update', 'account', 'account_update', 'category_create', 'category_update', 'category_delete', 'category_reorder', 'media_list', 'media_upload', 'media_update', 'media_delete', 'support_start', 'support_verify', 'support_send', 'support_mine', 'support_logout', 'support_list', 'support_reply', 'support_reply_update', 'support_reply_delete', 'support_create', 'support_check', 'user_start', 'user_verify', 'user_me', 'user_logout', 'users', 'user_set_admin', 'article_view', 'app_info', 'app_releases', 'app_upload', 'app_set_latest', 'app_delete', 'app_scan', 'user_announcements', 'announcements', 'announcement_create', 'announcement_update', 'announcement_delete', 'announcement_view', 'announcement_comments', 'announcement_comment_create', 'announcement_comment_delete'], true)) {
+        if (! in_array($action, ['login', 'me', 'logout', 'create', 'update', 'delete', 'stats', 'posts', 'pages', 'page_update', 'account', 'account_update', 'category_create', 'category_update', 'category_delete', 'category_reorder', 'media_list', 'media_upload', 'media_update', 'media_delete', 'support_start', 'support_verify', 'support_send', 'support_mine', 'support_logout', 'support_list', 'support_reply', 'support_reply_update', 'support_reply_delete', 'support_create', 'support_check', 'user_start', 'user_verify', 'user_me', 'user_logout', 'users', 'user_set_admin', 'article_view', 'app_info', 'app_releases', 'app_upload', 'app_set_latest', 'app_delete', 'app_scan', 'user_announcements', 'public_announcements', 'announcements', 'announcement_create', 'announcement_update', 'announcement_delete', 'announcement_view', 'announcement_comments', 'announcement_comment_create', 'announcement_comment_delete'], true)) {
             throw new ApiError(404, 'unknown_action', 'این عملیات وجود ندارد.');
         }
-        $requiredMethod = in_array($action, ['me', 'stats', 'posts', 'pages', 'account', 'media_list', 'support_list', 'support_mine', 'user_me', 'users', 'app_info', 'app_releases', 'user_announcements', 'announcements', 'announcement_comments'], true) ? 'GET' : 'POST';
+        $requiredMethod = in_array($action, ['me', 'stats', 'posts', 'pages', 'account', 'media_list', 'support_list', 'support_mine', 'user_me', 'users', 'app_info', 'app_releases', 'user_announcements', 'public_announcements', 'announcements', 'announcement_comments'], true) ? 'GET' : 'POST';
         if ($method !== $requiredMethod) {
             throw new ApiError(405, 'method_not_allowed', 'روش درخواست معتبر نیست.');
         }
@@ -257,30 +257,58 @@ class DivanApi
 
             return ['ok' => true, 'access_token' => $token, 'token_type' => 'Bearer', 'expires_in' => 2592000, 'user' => $this->formatSupportUser($user)];
         }
-        if (in_array($action, ['support_send', 'support_mine', 'support_logout', 'user_me', 'user_logout', 'user_announcements', 'announcement_view', 'announcement_comments', 'announcement_comment_create', 'announcement_comment_delete'], true)) {
-            $user = $this->supportPrincipal($bearer, $now);
-            if ($action === 'announcement_comments') {
-                $aid = (int) $this->id($input['announcement_id'] ?? $input['id'] ?? null);
-                if ($aid <= 0) {
-                    throw new ApiError(422, 'invalid_announcement_id', 'شناسه اعلام الزامی است.');
-                }
-                $comments = array_map(static function ($c) {
-                    $isAdmin = ! empty($c['user_is_admin']);
+        if ($action === 'public_announcements') {
+            return [
+                'ok' => true,
+                'announcements' => array_map(static function ($row) {
                     return [
-                        'id' => (string) $c['id'],
-                        'announcement_id' => (string) $c['announcement_id'],
-                        'user_id' => (string) $c['user_id'],
-                        'user_name' => $isAdmin ? 'پشتیبان دیوان انصارالحسین(ع)' : (string) $c['user_name'],
-                        'user_is_admin' => $isAdmin,
-                        'parent_id' => $c['parent_id'] !== null ? (string) $c['parent_id'] : null,
-                        'comment' => (string) $c['comment'],
-                        'created_at' => gmdate('Y-m-d\TH:i:s\Z', (int) $c['created_at']),
-                        'updated_at' => gmdate('Y-m-d\TH:i:s\Z', (int) $c['updated_at']),
+                        'id' => (string) $row['id'],
+                        'title' => (string) $row['title'],
+                        'subtitle' => (string) ($row['subtitle'] ?? ''),
+                        'description' => (string) $row['description'],
+                        'is_public' => true,
+                        'created_at' => gmdate('Y-m-d\TH:i:s\Z', (int) $row['created_at']),
+                        'updated_at' => gmdate('Y-m-d\TH:i:s\Z', (int) $row['updated_at']),
                     ];
-                }, $this->store->announcementComments($aid));
-
-                return ['ok' => true, 'comments' => $comments];
+                }, $this->store->publicAnnouncements()),
+            ];
+        }
+        if ($action === 'announcement_comments') {
+            $aid = (int) $this->id($input['announcement_id'] ?? $input['id'] ?? null);
+            if ($aid <= 0) {
+                throw new ApiError(422, 'invalid_announcement_id', 'شناسه اعلام الزامی است.');
             }
+            $comments = array_map(static function ($c) {
+                $isAdmin = ! empty($c['user_is_admin']);
+                return [
+                    'id' => (string) $c['id'],
+                    'announcement_id' => (string) $c['announcement_id'],
+                    'user_id' => (string) $c['user_id'],
+                    'user_name' => $isAdmin ? 'پشتیبان دیوان انصارالحسین(ع)' : (string) $c['user_name'],
+                    'user_is_admin' => $isAdmin,
+                    'parent_id' => $c['parent_id'] !== null ? (string) $c['parent_id'] : null,
+                    'comment' => (string) $c['comment'],
+                    'created_at' => gmdate('Y-m-d\TH:i:s\Z', (int) $c['created_at']),
+                    'updated_at' => gmdate('Y-m-d\TH:i:s\Z', (int) $c['updated_at']),
+                ];
+            }, $this->store->announcementComments($aid));
+
+            return ['ok' => true, 'comments' => $comments];
+        }
+        if ($action === 'announcement_view') {
+            if ($bearer) {
+                try {
+                    $user = $this->supportPrincipal($bearer, $now);
+                    $aid = (int) $this->id($input['id'] ?? $input['announcement_id'] ?? null);
+                    if ($aid > 0) {
+                        $this->store->recordAnnouncementView($aid, (int) $user['id'], $now);
+                    }
+                } catch (\Throwable) {}
+            }
+            return ['ok' => true];
+        }
+        if (in_array($action, ['support_send', 'support_mine', 'support_logout', 'user_me', 'user_logout', 'user_announcements', 'announcement_comment_create', 'announcement_comment_delete'], true)) {
+            $user = $this->supportPrincipal($bearer, $now);
             if ($action === 'user_announcements') {
                 return [
                     'ok' => true,
@@ -290,19 +318,12 @@ class DivanApi
                             'title' => (string) $row['title'],
                             'subtitle' => (string) ($row['subtitle'] ?? ''),
                             'description' => (string) $row['description'],
+                            'is_public' => false,
                             'created_at' => gmdate('Y-m-d\TH:i:s\Z', (int) $row['created_at']),
                             'updated_at' => gmdate('Y-m-d\TH:i:s\Z', (int) $row['updated_at']),
                         ];
                     }, $this->store->announcementsForUser($user['id'])),
                 ];
-            }
-            if ($action === 'announcement_view') {
-                $aid = (int) $this->id($input['id'] ?? $input['announcement_id'] ?? null);
-                if ($aid > 0) {
-                    $this->store->recordAnnouncementView($aid, (int) $user['id'], $now);
-                }
-
-                return ['ok' => true];
             }
             if ($action === 'announcement_comment_create') {
                 $aid = (int) $this->id($input['announcement_id'] ?? null);
@@ -684,6 +705,7 @@ class DivanApi
                         'title' => (string) $row['title'],
                         'subtitle' => (string) ($row['subtitle'] ?? ''),
                         'description' => (string) $row['description'],
+                        'is_public' => ! empty($row['is_public']),
                         'user_ids' => is_array($row['user_ids'] ?? null)
                             ? array_values(array_map('strval', $row['user_ids']))
                             : array_values(array_filter(explode(',', (string) ($row['user_ids'] ?? '')))),
@@ -704,6 +726,7 @@ class DivanApi
                         'title' => (string) $row['title'],
                         'subtitle' => (string) ($row['subtitle'] ?? ''),
                         'description' => (string) $row['description'],
+                        'is_public' => ! empty($row['is_public']),
                         'user_ids' => $userIds,
                         'created_at' => gmdate('Y-m-d\TH:i:s\Z', (int) $row['created_at']),
                         'updated_at' => gmdate('Y-m-d\TH:i:s\Z', (int) $row['updated_at']),
@@ -715,6 +738,7 @@ class DivanApi
             $title = $input['title'] ?? null;
             $subtitle = $input['subtitle'] ?? '';
             $description = $input['description'] ?? null;
+            $isPublic = ! empty($input['is_public']);
             if (! is_string($title) || trim($title) === '' || mb_strlen($title) > 500) {
                 throw new ApiError(422, 'invalid_title', 'عنوان اعلام الزامی است و حداکثر ۵۰۰ نویسه است.');
             }
@@ -732,11 +756,11 @@ class DivanApi
                 if (! $this->store->announcement($id)) {
                     throw new ApiError(404, 'announcement_not_found', 'اعلام پیدا نشد.');
                 }
-                $this->store->updateAnnouncement($id, trim($title), is_string($subtitle) ? trim($subtitle) : null, trim($description), $userIds, $now);
+                $this->store->updateAnnouncement($id, trim($title), is_string($subtitle) ? trim($subtitle) : null, trim($description), $userIds, $now, $isPublic);
                 return ['ok' => true, 'id' => (string) $id];
             }
 
-            $id = $this->store->createAnnouncement(trim($title), is_string($subtitle) ? trim($subtitle) : null, trim($description), $userIds, $now);
+            $id = $this->store->createAnnouncement(trim($title), is_string($subtitle) ? trim($subtitle) : null, trim($description), $userIds, $now, $isPublic);
             return ['ok' => true, 'id' => (string) $id];
         }
         if ($action === 'announcement_delete') {

@@ -840,53 +840,72 @@ async function render(route) {
         async target => (await api.call('pages')).pages.some(p => p.slug === target.slug && p.title === target.title && p.html_body === target.html_body && p.revision === Number(target.revision) + 1),
         () => render('pages'));
     };
-  } else if (view === 'announcements') {
+  } else if (view === 'announcements' || view === 'announcements-public' || view === 'pages') {
+    const isPublicOnly = view === 'announcements-public' || view === 'pages';
     const [result, usersRes] = await Promise.all([
       api.call('announcements'),
       api.call('users').catch(() => ({users: []})),
     ]);
     const announcements = result.announcements || [];
+    const publicCount = announcements.filter(a => a.is_public).length;
+    const privateCount = announcements.filter(a => !a.is_public).length;
+
     html = `
       <div class="actions">
-        <h1>اعلام‌ها و اخبار مهم</h1>
-        ${button('اعلام جدید', 'announcement-new')}
+        <h1>${isPublicOnly ? 'اعلام‌های عمومی (صفحه اول)' : 'اعلام‌ها و اخبار مهم'}</h1>
+        ${button(isPublicOnly ? 'اعلام عمومی جدید' : 'اعلام جدید', isPublicOnly ? 'announcement-new-public' : 'announcement-new')}
       </div>
-      <p class="help">اعلام‌ها فقط برای کاربرانی در اپلیکیشن موبایل نمایش داده می‌شوند که در این بخش انتخاب شده باشند.</p>
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+        <a href="#announcements" class="button ${!isPublicOnly ? 'primary' : ''}" style="min-height:38px;padding:6px 16px;font-size:13px">همه اعلام‌ها (${digits(announcements.length)})</a>
+        <a href="#announcements-public" class="button ${isPublicOnly ? 'primary' : ''}" style="min-height:38px;padding:6px 16px;font-size:13px">اعلام‌های عمومی — صفحه اول (${digits(publicCount)})</a>
+      </div>
+      <p class="help">
+        ${isPublicOnly 
+          ? 'اعلام‌های عمومی در صفحهٔ اول اپلیکیشن موبایل برای همهٔ کاربران و بازدیدکنندگان نمایش داده می‌شوند.' 
+          : 'اعلام‌های عمومی در صفحهٔ نخست اپ، و اعلام‌های اختصاصی فقط برای کاربران انتخاب‌شده در برگهٔ اعلام‌های اپ نمایش داده می‌شوند.'}
+      </p>
       <section class="card table-wrap">
         <table>
           <thead>
             <tr>
               <th>عنوان اعلام</th>
+              <th>نوع / گیرندگان</th>
               <th>عنوان فرعی / تاریخ</th>
-              <th>گیرندگان</th>
               <th>تاریخ ثبت</th>
               <th>عملیات</th>
             </tr>
           </thead>
           <tbody>
-            ${announcements.map(a => {
-              const count = a.user_ids ? a.user_ids.length : 0;
-              const badge = count > 0 ? `<span class="category-badge">${digits(count)} کاربر</span>` : '<span class="category-badge" style="background:#fee2e2;color:#991b1b">هیچ کاربری</span>';
-              return `<tr>
-                <td><strong>${e(a.title)}</strong></td>
-                <td><small>${e(a.subtitle || '—')}</small></td>
-                <td>${badge}</td>
-                <td><small>${e(displayDate(a.created_at))}</small></td>
-                <td>
-                  <div class="table-actions">
-                    ${button('مشاهده', `announcement-read/${a.id}`)}
-                    ${button('ویرایش', `announcement/${a.id}`)}
-                    <button type="button" class="danger compact" data-delete="announcement" data-id="${e(a.id)}" data-label="${e(a.title)}">حذف</button>
-                  </div>
-                </td>
-              </tr>`;
+            ${announcements
+              .filter(a => isPublicOnly ? !!a.is_public : true)
+              .map(a => {
+                const count = a.user_ids ? a.user_ids.length : 0;
+                const typeBadge = a.is_public
+                  ? '<span class="category-badge" style="background:#dcfce7;color:#166534;font-weight:700">عمومی (صفحه اول)</span>'
+                  : (count > 0 
+                      ? `<span class="category-badge" style="background:#e0e7ff;color:#3730a3">خصوصی (${digits(count)} کاربر)</span>`
+                      : '<span class="category-badge" style="background:#fee2e2;color:#991b1b">خصوصی (بدون کاربر)</span>');
+                return `<tr>
+                  <td><strong>${e(a.title)}</strong></td>
+                  <td>${typeBadge}</td>
+                  <td><small>${e(a.subtitle || '—')}</small></td>
+                  <td><small>${e(displayDate(a.created_at))}</small></td>
+                  <td>
+                    <div class="table-actions">
+                      ${button('مشاهده', `announcement-read/${a.id}`)}
+                      ${button('ویرایش', `announcement/${a.id}`)}
+                      <button type="button" class="danger compact" data-delete="announcement" data-id="${e(a.id)}" data-label="${e(a.title)}">حذف</button>
+                    </div>
+                  </td>
+                </tr>`;
             }).join('')}
           </tbody>
         </table>
-        ${announcements.length ? '' : '<p class="empty">هنوز هیچ اعلامی ثبت نشده است.</p>'}
+        ${announcements.filter(a => isPublicOnly ? !!a.is_public : true).length ? '' : '<p class="empty">هنوز هیچ اعلامی در این بخش ثبت نشده است.</p>'}
       </section>
     `;
-  } else if (view === 'announcement' || view === 'announcement-new') {
+  } else if (view === 'announcement' || view === 'announcement-new' || view === 'announcement-new-public') {
+    const isNewPublic = view === 'announcement-new-public';
     const [originalRes, usersRes] = await Promise.all([
       view === 'announcement' ? api.call('announcements', {query: {id}}) : Promise.resolve(null),
       api.call('users').catch(() => ({users: []})),
@@ -895,21 +914,31 @@ async function render(route) {
     if (view === 'announcement' && !original) throw new ApiError('اعلام مورد نظر یافت نشد.');
     const users = usersRes.users || [];
     const selectedIds = new Set((original?.user_ids || []).map(String));
+    const isPublicDefault = original ? !!original.is_public : isNewPublic;
 
     html = `
       <div class="actions">
-        <h1>${original ? 'ویرایش اعلام' : 'اعلام جدید'}</h1>
-        ${button('بازگشت', 'announcements')}
+        <h1>${original ? 'ویرایش اعلام' : (isNewPublic ? 'اعلام عمومی جدید' : 'اعلام جدید')}</h1>
+        ${button('بازگشت', isNewPublic || original?.is_public ? 'announcements-public' : 'announcements')}
       </div>
       ${original ? `<p class="article-dates">ایجاد: ${e(displayDate(original.created_at))}　·　آخرین ویرایش: ${e(displayDate(original.updated_at))}</p>` : ''}
       <form id="announcement-form" class="card form-card">
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:14px;padding:14px 18px;margin-bottom:20px">
+          <label style="display:flex;align-items:center;gap:12px;margin:0;cursor:pointer">
+            <input type="checkbox" name="is_public" id="is_public_cb" ${isPublicDefault ? 'checked' : ''} style="width:22px;height:22px;min-height:auto;flex:none;accent-color:#166534">
+            <div>
+              <strong style="color:#166534;font-size:15px;display:block">اعلام عمومی (نمایش در صفحه اول برنامه)</strong>
+              <small style="color:#15803d;display:block;margin-top:2px">این اعلام در صفحه اول اپلیکیشن برای همهٔ کاربران نمایش داده می‌شود و نیاز به تعیین گیرنده ندارد.</small>
+            </div>
+          </label>
+        </div>
         <label>عنوان اعلام
-          <input name="title" maxlength="500" required value="${e(original?.title || '')}" placeholder="مثال: ساعت برگزاری مراسم هفتگی">
+          <input name="title" maxlength="500" required value="${e(original?.title || '')}" placeholder="مثال: ساعت برگزاری مراسم هفتگی یا سخن اول">
         </label>
         <label>عنوان فرعی یا تاریخ
           <input name="subtitle" maxlength="255" value="${e(original?.subtitle || '')}" placeholder="مثال: اطلاعیه شماره ۱ — پاییز ۱۴۰۳">
         </label>
-        <div class="users-selection-box">
+        <div class="users-selection-box" id="users-selection-box">
           <div class="users-selection-header">
             <div>
               <strong>انتخاب کاربران مجاز برای مشاهده این اعلام</strong>
@@ -958,6 +987,21 @@ async function render(route) {
       await mountEditor(form, body, 'متن اعلام');
       $('#refresh-preview').onclick = () => preview($('.preview'), editorHtml(body));
 
+      const isPublicCb = form.querySelector('#is_public_cb');
+      const usersBox = form.querySelector('#users-selection-box');
+      const toggleUsersBox = () => {
+        if (usersBox) {
+          usersBox.style.display = (isPublicCb && isPublicCb.checked) ? 'none' : 'block';
+        }
+      };
+      if (isPublicCb) {
+        isPublicCb.addEventListener('change', () => {
+          toggleUsersBox();
+          markDirty();
+        });
+        toggleUsersBox();
+      }
+
       const countBadge = $('#users-count-badge');
       const updateCount = () => {
         const checkedCount = form.querySelectorAll('.user-check-item input[type=checkbox]:checked').length;
@@ -1003,12 +1047,14 @@ async function render(route) {
       });
 
       const fields = () => {
-        const checkedIds = [...form.querySelectorAll('.user-check-item input[type=checkbox]:checked')].map(cb => cb.value);
+        const isPub = form.elements.namedItem('is_public')?.checked ? 1 : 0;
+        const checkedIds = isPub ? [] : [...form.querySelectorAll('.user-check-item input[type=checkbox]:checked')].map(cb => cb.value);
         return {
           title: form.elements.namedItem('title').value,
           subtitle: form.elements.namedItem('subtitle').value,
           description: editorHtml(body),
-          user_ids: JSON.stringify(checkedIds),
+          is_public: isPub,
+          user_ids: isPub ? '[]' : JSON.stringify(checkedIds),
           ...(original ? {id: String(id)} : {}),
         };
       };
@@ -1021,7 +1067,7 @@ async function render(route) {
           const list = (await api.call('announcements')).announcements;
           return list.some(a => (original ? String(a.id) === String(id) : true) && a.title === target.title);
         },
-        () => render('announcements')
+        () => render(form.elements.namedItem('is_public')?.checked ? 'announcements-public' : 'announcements')
       );
     };
   } else if (view === 'announcement-read') {
@@ -1067,11 +1113,15 @@ async function render(route) {
       <div class="actions">
         <h1>${e(a.title)}</h1>
         ${button('ویرایش', `announcement/${id}`)}
-        ${button('بازگشت', 'announcements')}
+        ${button('بازگشت', a.is_public ? 'announcements-public' : 'announcements')}
       </div>
       <p><strong>${e(a.subtitle || '')}</strong></p>
       <p class="article-dates">ایجاد: ${e(displayDate(a.created_at))}　·　آخرین ویرایش: ${e(displayDate(a.updated_at))}</p>
-      <p class="help"><strong>کاربران مخاطب (${digits((a.user_ids || []).length)} نفر):</strong> ${e(targetNames || 'هیچ کاربری انتخاب نشده است')}</p>
+      <p class="help">
+        ${a.is_public
+          ? '<span class="category-badge" style="background:#dcfce7;color:#166534;font-weight:700">اعلام عمومی — نمایش در صفحه نخست اپلیکیشن برای همه</span>'
+          : `<strong>کاربران مخاطب (${digits((a.user_ids || []).length)} نفر):</strong> ${e(targetNames || 'هیچ کاربری انتخاب نشده است')}`}
+      </p>
       <iframe class="preview" sandbox="" referrerpolicy="no-referrer" title="متن اعلام"></iframe>
 
       <div class="section-heading" style="margin-top:36px">

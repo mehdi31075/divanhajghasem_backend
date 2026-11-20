@@ -163,4 +163,30 @@ final class AnnouncementsApiTest extends TestCase
         self::assertCount(1, $listRes['comments']);
         self::assertSame('یک نظر تستی', $listRes['comments'][0]['comment']);
     }
+
+    public function test_public_announcements_requires_no_auth(): void
+    {
+        $now = 1_800_000_000;
+        $store = $this->createMock(DivanRepository::class);
+        $store->method('publicAnnouncements')->willReturn([
+            [
+                'id' => 1,
+                'title' => 'سخن اول',
+                'subtitle' => 'مقدمه',
+                'description' => '<p>سلام</p>',
+                'is_public' => 1,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+        ]);
+
+        $api = new DivanApi($store, 'https://divanansar.ir');
+        $res = $api->handle('GET', 'public_announcements', [], null, '127.0.0.1', $now);
+
+        self::assertTrue($res['ok']);
+        self::assertCount(1, $res['announcements']);
+        self::assertSame('1', $res['announcements'][0]['id']);
+        self::assertSame('سخن اول', $res['announcements'][0]['title']);
+        self::assertTrue($res['announcements'][0]['is_public']);
+    }
 }
