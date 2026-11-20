@@ -542,13 +542,19 @@ function bindForm(form, action, getFields, verify, onSuccess, before = null) {
 async function deleteItem(kind, id, label) {
   if (state.pending) { notice('ابتدا نتیجهٔ ارسال قبلی را بررسی کنید.', true); return; }
   if (!window.confirm(`«${label}» به‌صورت دائمی حذف شود؟${kind === 'category' ? '\nدسته باید خالی باشد؛ مطالب آن خودکار حذف نمی‌شوند.' : ''}`)) return;
-  const verify = async () => kind === 'category' ? !(await api.call('')).some(c => String(c.cid) === id) : (await api.call('', {query: {nid: id}})).length === 0;
+  const actionName = kind === 'category' ? 'category_delete' : kind === 'announcement' ? 'announcement_delete' : 'delete';
+  const targetRoute = kind === 'category' ? 'categories' : kind === 'announcement' ? 'announcements' : 'posts';
+  const verify = async () => {
+    if (kind === 'category') return !(await api.call('')).some(c => String(c.cid) === id);
+    if (kind === 'announcement') return !(await api.call('announcements')).announcements.some(a => String(a.id) === id);
+    return (await api.call('', {query: {nid: id}})).length === 0;
+  };
   try {
-    await api.call(kind === 'category' ? 'category_delete' : 'delete', {method: 'POST', fields: {id}});
-    await render(kind === 'category' ? 'categories' : 'posts'); notice('حذف روی سرور انجام شد.');
+    await api.call(actionName, {method: 'POST', fields: {id}});
+    await render(targetRoute); notice('حذف روی سرور انجام شد.');
   } catch (error) {
     if (error.uncertain) {
-      if (await verify().catch(() => false)) { await render(kind === 'category' ? 'categories' : 'posts'); notice('حذف تأیید شد.'); }
+      if (await verify().catch(() => false)) { await render(targetRoute); notice('حذف تأیید شد.'); }
       else { state.pending = {verify}; notice('نتیجهٔ حذف نامشخص است. دکمهٔ «بررسی نتیجهٔ حذف» فقط از سرور می‌خواند.', true); $('#content').insertAdjacentHTML('afterbegin', '<button id="check-delete">بررسی نتیجهٔ حذف</button>'); }
     } else { if (error.status === 401) lock(error.message); notice(error.message, true); }
   }
@@ -775,6 +781,212 @@ async function render(route) {
         async target => (await api.call('pages')).pages.some(p => p.slug === target.slug && p.title === target.title && p.html_body === target.html_body && p.revision === Number(target.revision) + 1),
         () => render('pages'));
     };
+  } else if (view === 'announcements') {
+    const [result, usersRes] = await Promise.all([
+      api.call('announcements'),
+      api.call('users').catch(() => ({users: []})),
+    ]);
+    const announcements = result.announcements || [];
+    html = `
+      <div class="actions">
+        <h1>اعلام‌ها و اخبار مهم</h1>
+        ${button('اعلام جدید', 'announcement-new')}
+      </div>
+      <p class="help">اعلام‌ها فقط برای کاربرانی در اپلیکیشن موبایل نمایش داده می‌شوند که در این بخش انتخاب شده باشند.</p>
+      <section class="card table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>عنوان اعلام</th>
+              <th>عنوان فرعی / تاریخ</th>
+              <th>گیرندگان</th>
+              <th>تاریخ ثبت</th>
+              <th>عملیات</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${announcements.map(a => {
+              const count = a.user_ids ? a.user_ids.length : 0;
+              const badge = count > 0 ? `<span class="category-badge">${digits(count)} کاربر</span>` : '<span class="category-badge" style="background:#fee2e2;color:#991b1b">هیچ کاربری</span>';
+              return `<tr>
+                <td><strong>${e(a.title)}</strong></td>
+                <td><small>${e(a.subtitle || '—')}</small></td>
+                <td>${badge}</td>
+                <td><small>${e(displayDate(a.created_at))}</small></td>
+                <td>
+                  <div class="table-actions">
+                    ${button('مشاهده', `announcement-read/${a.id}`)}
+                    ${button('ویرایش', `announcement/${a.id}`)}
+                    <button type="button" class="danger compact" data-delete="announcement" data-id="${e(a.id)}" data-label="${e(a.title)}">حذف</button>
+                  </div>
+                </td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+        ${announcements.length ? '' : '<p class="empty">هنوز هیچ اعلامی ثبت نشده است.</p>'}
+      </section>
+    `;
+  } else if (view === 'announcement' || view === 'announcement-new') {
+    const [originalRes, usersRes] = await Promise.all([
+      view === 'announcement' ? api.call('announcements', {query: {id}}).catch(() => null) : Promise.resolve(null),
+      api.call('users').catch(() => ({users: []})),
+    ]);
+    const original = originalRes?.announcement || null;
+    if (view === 'announcement' && !original) throw new ApiError('اعلام مورد نظر یافت نشد.');
+    const users = usersRes.users || [];
+    const selectedIds = new Set((original?.user_ids || []).map(String));
+
+    html = `
+      <div class="actions">
+        <h1>${original ? 'ویرایش اعلام' : 'اعلام جدید'}</h1>
+        ${button('بازگشت', 'announcements')}
+      </div>
+      ${original ? `<p class="article-dates">ایجاد: ${e(displayDate(original.created_at))}　·　آخرین ویرایش: ${e(displayDate(original.updated_at))}</p>` : ''}
+      <form id="announcement-form" class="card form-card">
+        <label>عنوان اعلام
+          <input name="title" maxlength="500" required value="${e(original?.title || '')}" placeholder="مثال: ساعت برگزاری مراسم هفتگی">
+        </label>
+        <label>عنوان فرعی یا تاریخ
+          <input name="subtitle" maxlength="255" value="${e(original?.subtitle || '')}" placeholder="مثال: اطلاعیه شماره ۱ — پاییز ۱۴۰۳">
+        </label>
+        <div class="users-selection-box">
+          <div class="users-selection-header">
+            <div>
+              <strong>انتخاب کاربران مجاز برای مشاهده این اعلام</strong>
+              <p class="help" style="margin:2px 0 0">این اعلام فقط برای کاربرانی که تیک خورده باشند در بخش اعلام‌های اپ موبایل نمایش داده می‌شود.</p>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span id="users-count-badge" class="category-badge">${digits(selectedIds.size)} کاربر انتخاب شده</span>
+              <button type="button" id="btn-select-all" class="compact">انتخاب همه</button>
+              <button type="button" id="btn-deselect-all" class="compact">لغو همه</button>
+            </div>
+          </div>
+          <div style="margin-bottom:8px">
+            <input type="search" id="user-search-input" placeholder="جستجوی نام یا شماره همراه کاربر…" style="font-size:13px;padding:6px 10px">
+          </div>
+          <div class="users-checkbox-list" id="users-list">
+            ${users.map(u => {
+              const isChecked = selectedIds.has(String(u.id));
+              return `<label class="user-check-item" data-search="${e((u.name || '') + ' ' + (u.mobile || ''))}">
+                <input type="checkbox" name="user_id" value="${e(u.id)}" ${isChecked ? 'checked' : ''}>
+                <div class="user-check-info">
+                  <strong>${e(u.name || 'کاربر بدون نام')}</strong>
+                  <small dir="ltr">${e(u.mobile || '')}</small>
+                </div>
+              </label>`;
+            }).join('')}
+            ${users.length ? '' : '<p class="empty" style="padding:10px">هنوز کاربری در سامانه ثبت‌نام نکرده است.</p>'}
+          </div>
+        </div>
+        <label>متن و محتوای اعلام
+          <textarea id="body" name="description">${e(original?.description || '')}</textarea>
+        </label>
+        <p class="help">می‌توانید از دکمه‌های درج تصویر و ویدیو در نوار ابزار بالا برای غنی‌تر کردن متن اعلام استفاده کنید.</p>
+        <details>
+          <summary>پیش‌نمایش متن</summary>
+          <button id="refresh-preview" type="button">نمایش متن فعلی</button>
+          <iframe class="preview" sandbox="" referrerpolicy="no-referrer" title="پیش‌نمایش اعلام"></iframe>
+        </details>
+        <p class="form-message" role="alert"></p>
+        <button type="submit" class="primary">ذخیره روی سرور</button>
+      </form>
+    `;
+
+    after = async () => {
+      const form = $('#announcement-form');
+      const body = original?.description || '';
+      await mountEditor(form, body, 'متن اعلام');
+      $('#refresh-preview').onclick = () => preview($('.preview'), editorHtml(body));
+
+      const countBadge = $('#users-count-badge');
+      const updateCount = () => {
+        const checkedCount = form.querySelectorAll('.user-check-item input[type=checkbox]:checked').length;
+        if (countBadge) countBadge.textContent = `${digits(checkedCount)} کاربر انتخاب شده`;
+      };
+
+      const userSearch = $('#user-search-input');
+      if (userSearch) {
+        userSearch.addEventListener('input', () => {
+          const q = userSearch.value.trim().toLowerCase();
+          for (const item of form.querySelectorAll('.user-check-item')) {
+            const str = (item.dataset.search || '').toLowerCase();
+            item.style.display = (!q || str.includes(q)) ? '' : 'none';
+          }
+        });
+      }
+
+      $('#btn-select-all')?.addEventListener('click', () => {
+        for (const cb of form.querySelectorAll('.user-check-item input[type=checkbox]')) {
+          const item = cb.closest('.user-check-item');
+          if (item && item.style.display !== 'none') {
+            cb.checked = true;
+          }
+        }
+        updateCount();
+        markDirty();
+      });
+
+      $('#btn-deselect-all')?.addEventListener('click', () => {
+        for (const cb of form.querySelectorAll('.user-check-item input[type=checkbox]')) {
+          const item = cb.closest('.user-check-item');
+          if (item && item.style.display !== 'none') {
+            cb.checked = false;
+          }
+        }
+        updateCount();
+        markDirty();
+      });
+
+      form.querySelector('#users-list')?.addEventListener('change', () => {
+        updateCount();
+        markDirty();
+      });
+
+      const fields = () => {
+        const checkedIds = [...form.querySelectorAll('.user-check-item input[type=checkbox]:checked')].map(cb => cb.value);
+        return {
+          title: form.elements.namedItem('title').value,
+          subtitle: form.elements.namedItem('subtitle').value,
+          description: editorHtml(body),
+          user_ids: JSON.stringify(checkedIds),
+          ...(original ? {id: String(id)} : {}),
+        };
+      };
+
+      bindForm(
+        form,
+        original ? 'announcement_update' : 'announcement_create',
+        fields,
+        async target => {
+          const list = (await api.call('announcements')).announcements;
+          return list.some(a => (original ? String(a.id) === String(id) : true) && a.title === target.title);
+        },
+        () => render('announcements')
+      );
+    };
+  } else if (view === 'announcement-read') {
+    const [result, usersRes] = await Promise.all([
+      api.call('announcements', {query: {id}}),
+      api.call('users').catch(() => ({users: []})),
+    ]);
+    const a = result.announcement;
+    if (!a) throw new ApiError('اعلام پیدا نشد.');
+    const usersMap = new Map((usersRes.users || []).map(u => [String(u.id), u]));
+    const targetNames = (a.user_ids || []).map(uid => usersMap.get(String(uid))?.name || `کاربر ${uid}`).join('، ');
+
+    html = `
+      <div class="actions">
+        <h1>${e(a.title)}</h1>
+        ${button('ویرایش', `announcement/${id}`)}
+        ${button('بازگشت', 'announcements')}
+      </div>
+      <p><strong>${e(a.subtitle || '')}</strong></p>
+      <p class="article-dates">ایجاد: ${e(displayDate(a.created_at))}　·　آخرین ویرایش: ${e(displayDate(a.updated_at))}</p>
+      <p class="help"><strong>کاربران مخاطب (${digits((a.user_ids || []).length)} نفر):</strong> ${e(targetNames || 'هیچ کاربری انتخاب نشده است')}</p>
+      <iframe class="preview" sandbox="" referrerpolicy="no-referrer" title="متن اعلام"></iframe>
+    `;
+    after = () => preview($('.preview'), a.description);
   } else if (view === 'app') {
     const result = await api.call('app_releases');
     const releases = result?.releases || [];
@@ -1062,7 +1274,7 @@ document.addEventListener('click', event => {
 });
 window.addEventListener('beforeunload', event => { if (state.dirty || state.pending) { event.preventDefault(); event.returnValue = ''; } });
 function initialRoute() {
-  const old = {'dashboard.php': 'home', 'story.php': 'posts', 'category.php': 'categories', 'admin.php': 'account', 'setting.php': 'account', 'add-menu.php': 'post-new', 'edit-menu.php': 'post', 'delete-menu.php': 'post', 'menu-detail.php': 'read', 'add-category.php': 'category-new', 'edit-category.php': 'category', 'delete-category.php': 'category', 'app.php': 'app', 'download.php': 'app', 'logout.php': 'logout'};
+  const old = {'dashboard.php': 'home', 'story.php': 'posts', 'category.php': 'categories', 'announcements.php': 'announcements', 'announcement-new.php': 'announcement-new', 'admin.php': 'account', 'setting.php': 'account', 'add-menu.php': 'post-new', 'edit-menu.php': 'post', 'delete-menu.php': 'post', 'menu-detail.php': 'read', 'add-category.php': 'category-new', 'edit-category.php': 'category', 'delete-category.php': 'category', 'app.php': 'app', 'download.php': 'app', 'logout.php': 'logout'};
   const name = location.pathname.split('/').pop(); const id = new URLSearchParams(location.search).get('id');
   const view = old[name] || 'home'; return location.hash.slice(1) || view + (id && /^[1-9][0-9]*$/.test(id) ? `/${id}` : '');
 }

@@ -7,11 +7,11 @@
   <title>دیوان انصارالحسین(ع) · مدیریت محتوا</title>
   <link rel="icon" href="{{ asset('assets/panel/mark.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ asset('assets/ckeditor/ckeditor5.css') }}">
-  <link rel="stylesheet" href="{{ asset('assets/panel/panel.css') }}?v=20261120-autosave-v4">
+  <link rel="stylesheet" href="{{ asset('assets/panel/panel.css') }}?v=20261120-announcements-v1">
   <script src="{{ asset('assets/purify/purify.min.js') }}" defer></script>
   <script src="{{ asset('assets/ckeditor/ckeditor5.umd.js') }}" defer></script>
   <script src="{{ asset('assets/ckeditor/fa.umd.js') }}" defer></script>
-  <script type="module" src="{{ asset('assets/panel/app.js') }}?v=20261120-autosave-v4"></script>
+  <script type="module" src="{{ asset('assets/panel/app.js') }}?v=20261120-announcements-v1"></script>
 </head>
 <body>
   <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
@@ -26,6 +26,7 @@
     <symbol id="i-support" viewBox="0 0 24 24"><path d="M4 5h16v12H8l-4 4z"/><path d="M8 9h8m-8 4h5"/></symbol>
     <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21v-2a7 7 0 0 1 14 0v2M16 4a4 4 0 0 1 0 8m2 3a6 6 0 0 1 4 6"/></symbol>
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v12m0 0 5-5m-5 5-5-5M4 20h16"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></symbol>
   </defs></svg>
   <main id="login" class="login-layout">
     <section class="login-brand" aria-label="دیوان">
@@ -49,6 +50,7 @@
       <nav aria-label="بخش‌های مدیریت">
         <a href="#home"><svg><use href="#i-home"/></svg><span>پیشخوان</span></a>
         <a href="#posts"><svg><use href="#i-book"/></svg><span>نوشته‌ها</span></a>
+        <a href="#announcements"><svg><use href="#i-bell"/></svg><span>اعلام‌ها</span></a>
         <a href="#categories"><svg><use href="#i-grid"/></svg><span>دسته‌بندی‌ها</span></a>
         <a href="#pages"><svg><use href="#i-book"/></svg><span>صفحه‌های دیوان</span></a>
         <a href="#media"><svg><use href="#i-media"/></svg><span>کتابخانهٔ رسانه</span></a>

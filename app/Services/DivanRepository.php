@@ -714,5 +714,103 @@ class DivanRepository
         }
         return true;
     }
+
+    public function ensureAnnouncementsTables(): void
+    {
+        try {
+            if (! \Illuminate\Support\Facades\Schema::hasTable('divan_announcements')) {
+                \Illuminate\Support\Facades\Schema::create('divan_announcements', function (\Illuminate\Database\Schema\Blueprint $table) {
+                    $table->bigIncrements('id');
+                    $table->string('title', 500);
+                    $table->string('subtitle', 255)->nullable();
+                    $table->longText('description');
+                    $table->unsignedInteger('created_at')->index();
+                    $table->unsignedInteger('updated_at')->index();
+                    $table->charset = 'utf8mb4';
+                    $table->collation = 'utf8mb4_unicode_ci';
+                });
+            }
+            if (! \Illuminate\Support\Facades\Schema::hasTable('divan_announcement_users')) {
+                \Illuminate\Support\Facades\Schema::create('divan_announcement_users', function (\Illuminate\Database\Schema\Blueprint $table) {
+                    $table->unsignedBigInteger('announcement_id');
+                    $table->unsignedBigInteger('user_id');
+                    $table->primary(['announcement_id', 'user_id']);
+                    $table->index('user_id');
+                    $table->charset = 'utf8mb4';
+                    $table->collation = 'utf8mb4_unicode_ci';
+                });
+            }
+        } catch (\Throwable) {}
+    }
+
+    public function announcements(): array
+    {
+        $this->ensureAnnouncementsTables();
+        return $this->query('SELECT a.id, a.title, a.subtitle, a.description, a.created_at, a.updated_at, GROUP_CONCAT(u.user_id) AS user_ids FROM divan_announcements a LEFT JOIN divan_announcement_users u ON u.announcement_id = a.id GROUP BY a.id, a.title, a.subtitle, a.description, a.created_at, a.updated_at ORDER BY a.id DESC LIMIT 500');
+    }
+
+    public function announcement($id)
+    {
+        $this->ensureAnnouncementsTables();
+        $rows = $this->query('SELECT a.id, a.title, a.subtitle, a.description, a.created_at, a.updated_at, GROUP_CONCAT(u.user_id) AS user_ids FROM divan_announcements a LEFT JOIN divan_announcement_users u ON u.announcement_id = a.id WHERE a.id = ? GROUP BY a.id, a.title, a.subtitle, a.description, a.created_at, a.updated_at', [$id]);
+        return $rows[0] ?? null;
+    }
+
+    public function announcementsForUser($userId): array
+    {
+        $this->ensureAnnouncementsTables();
+        return $this->query('SELECT a.id, a.title, a.subtitle, a.description, a.created_at, a.updated_at FROM divan_announcements a INNER JOIN divan_announcement_users u ON u.announcement_id = a.id WHERE u.user_id = ? ORDER BY a.id DESC LIMIT 200', [$userId]);
+    }
+
+    public function createAnnouncement(string $title, ?string $subtitle, string $description, array $userIds, ?int $now = null): int
+    {
+        $this->ensureAnnouncementsTables();
+        $now = $now ?? time();
+        $this->query('INSERT INTO divan_announcements (title, subtitle, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)', [
+            $title,
+            $subtitle ?: null,
+            $description,
+            $now,
+            $now,
+        ]);
+        $rows = $this->query('SELECT LAST_INSERT_ID() as last_id');
+        $id = (int) ($rows[0]['last_id'] ?? 0);
+        if ($id > 0) {
+            foreach (array_unique($userIds) as $uid) {
+                $uidInt = (int) $uid;
+                if ($uidInt > 0) {
+                    $this->query('INSERT IGNORE INTO divan_announcement_users (announcement_id, user_id) VALUES (?, ?)', [$id, $uidInt]);
+                }
+            }
+        }
+        return $id;
+    }
+
+    public function updateAnnouncement(int $id, string $title, ?string $subtitle, string $description, array $userIds, ?int $now = null): void
+    {
+        $this->ensureAnnouncementsTables();
+        $now = $now ?? time();
+        $this->query('UPDATE divan_announcements SET title = ?, subtitle = ?, description = ?, updated_at = ? WHERE id = ?', [
+            $title,
+            $subtitle ?: null,
+            $description,
+            $now,
+            $id,
+        ]);
+        $this->query('DELETE FROM divan_announcement_users WHERE announcement_id = ?', [$id]);
+        foreach (array_unique($userIds) as $uid) {
+            $uidInt = (int) $uid;
+            if ($uidInt > 0) {
+                $this->query('INSERT IGNORE INTO divan_announcement_users (announcement_id, user_id) VALUES (?, ?)', [$id, $uidInt]);
+            }
+        }
+    }
+
+    public function deleteAnnouncement(int $id): void
+    {
+        $this->ensureAnnouncementsTables();
+        $this->query('DELETE FROM divan_announcement_users WHERE announcement_id = ?', [$id]);
+        $this->query('DELETE FROM divan_announcements WHERE id = ?', [$id]);
+    }
 }
 

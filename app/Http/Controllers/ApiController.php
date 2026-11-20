@@ -36,8 +36,8 @@ class ApiController extends Controller
             ]);
         }
 
-        $private = ['me', 'logout', 'stats', 'posts', 'pages', 'page_update', 'account', 'account_update', 'create', 'update', 'delete', 'category_create', 'category_update', 'category_delete', 'category_reorder', 'media_list', 'media_upload', 'media_update', 'media_delete', 'support_list', 'support_reply', 'support_reply_update', 'support_reply_delete', 'users', 'app_info', 'app_releases', 'app_upload', 'app_set_latest', 'app_delete', 'app_scan'];
-        $requiredMethod = in_array($action, ['me', 'stats', 'posts', 'pages', 'account', 'media_list', 'support_list', 'users', 'app_info', 'app_releases'], true) ? 'GET' : 'POST';
+        $private = ['me', 'logout', 'stats', 'posts', 'pages', 'page_update', 'account', 'account_update', 'create', 'update', 'delete', 'category_create', 'category_update', 'category_delete', 'category_reorder', 'media_list', 'media_upload', 'media_update', 'media_delete', 'support_list', 'support_reply', 'support_reply_update', 'support_reply_delete', 'users', 'app_info', 'app_releases', 'app_upload', 'app_set_latest', 'app_delete', 'app_scan', 'announcements', 'announcement_create', 'announcement_update', 'announcement_delete'];
+        $requiredMethod = in_array($action, ['me', 'stats', 'posts', 'pages', 'account', 'media_list', 'support_list', 'users', 'app_info', 'app_releases', 'announcements'], true) ? 'GET' : 'POST';
         if (in_array($action, $private, true) && $request->method() === $requiredMethod && ! $request->user('divan')) {
             throw new ApiError(401, 'unauthorized', 'ورود منقضی شده است؛ دوباره وارد شوید.');
         }
