@@ -1035,6 +1035,33 @@ async function render(route) {
     const targetNames = (a.user_ids || []).map(uid => usersMap.get(String(uid))?.name || `کاربر ${uid}`).join('، ');
     const viewers = a.viewers || [];
     const comments = a.comments || [];
+    const commentsMap = new Map(comments.map(c => [String(c.id), c]));
+    const childrenMap = new Map();
+    const rootComments = [];
+    for (const c of comments) {
+      const pid = c.parent_id ? String(c.parent_id) : null;
+      if (pid && commentsMap.has(pid)) {
+        if (!childrenMap.has(pid)) childrenMap.set(pid, []);
+        childrenMap.get(pid).push(c);
+      } else {
+        rootComments.push(c);
+      }
+    }
+    const treeComments = [];
+    function traverseComments(c, depth) {
+      treeComments.push({
+        ...c,
+        _depth: depth,
+        _parent: c.parent_id ? commentsMap.get(String(c.parent_id)) : null,
+      });
+      const children = childrenMap.get(String(c.id)) || [];
+      for (const child of children) {
+        traverseComments(child, depth + 1);
+      }
+    }
+    for (const root of rootComments) {
+      traverseComments(root, 0);
+    }
 
     html = `
       <div class="actions">
@@ -1079,22 +1106,26 @@ async function render(route) {
       </div>
       <section class="card">
         ${comments.length ? `<div style="display:grid;gap:16px;padding:8px 0">
-          ${comments.map(c => `
-            <div style="background:#f8faf8;border:1px solid var(--line);border-radius:14px;padding:16px 20px;${c.parent_id ? 'margin-right:28px;border-right:3px solid var(--accent);' : ''}">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-                <div style="display:flex;align-items:center;gap:10px">
-                  <strong>${c.user_is_admin ? 'پشتیبان دیوان انصارالحسین(ع)' : e(c.user_name || 'کاربر')}</strong>
-                  ${c.user_is_admin ? `<small style="color:var(--muted)">(${e(c.user_name)})</small><span class="category-badge" style="background:#e0f2fe;color:#0369a1;padding:2px 8px;font-size:11px">پشتیبان دیوان</span>` : ''}
-                  ${c.parent_id ? '<span style="font-size:12px;color:var(--muted)">در پاسخ به نظر قبلی</span>' : ''}
+          ${treeComments.map(c => {
+            const parentName = c._parent ? (c._parent.user_is_admin ? 'پشتیبان دیوان' : (c._parent.user_name || 'کاربر')) : '';
+            const indent = Math.min(c._depth * 28, 56);
+            return `
+              <div style="background:#f8faf8;border:1px solid var(--line);border-radius:14px;padding:16px 20px;${indent > 0 ? `margin-right:${indent}px;border-right:3px solid var(--accent);` : ''}">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <strong>${c.user_is_admin ? 'پشتیبان دیوان انصارالحسین(ع)' : e(c.user_name || 'کاربر')}</strong>
+                    ${c.user_is_admin ? `<small style="color:var(--muted)">(${e(c.user_name)})</small><span class="category-badge" style="background:#e0f2fe;color:#0369a1;padding:2px 8px;font-size:11px">پشتیبان دیوان</span>` : ''}
+                    ${parentName ? `<span style="font-size:12px;color:var(--muted)">در پاسخ به ${e(parentName)}</span>` : ''}
+                  </div>
+                  <div style="display:flex;align-items:center;gap:12px">
+                    <small style="color:var(--muted);font-size:12px">${e(displayDate(c.created_at))}</small>
+                    <button type="button" class="danger compact" data-delete-comment="${e(c.id)}" style="min-height:34px;padding:4px 10px;font-size:12px">حذف نظر</button>
+                  </div>
                 </div>
-                <div style="display:flex;align-items:center;gap:12px">
-                  <small style="color:var(--muted);font-size:12px">${e(displayDate(c.created_at))}</small>
-                  <button type="button" class="danger compact" data-delete-comment="${e(c.id)}" style="min-height:34px;padding:4px 10px;font-size:12px">حذف نظر</button>
-                </div>
+                <p style="margin:0;line-height:1.8;white-space:pre-wrap">${e(c.comment)}</p>
               </div>
-              <p style="margin:0;line-height:1.8;white-space:pre-wrap">${e(c.comment)}</p>
-            </div>
-          `).join('')}
+            `;
+          }).join('')}
         </div>` : '<p class="empty" style="margin:0">هنوز نظری برای این اعلام ثبت نشده است.</p>'}
       </section>
     `;
