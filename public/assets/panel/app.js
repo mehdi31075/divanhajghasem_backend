@@ -31,53 +31,90 @@ function preview(frame, html) {
 }
 async function categories() { state.categories = await api.call(''); return state.categories; }
 function bindCategoryOrder(rows) {
-  const list = $('#category-list'), save = $('#save-category-order'), status = $('#category-order-status');
+  const list = $('#category-list'), status = $('#category-order-status');
   if (!list) return;
   let baseline = rows.map(row => String(row.cid));
   let saving = false;
+  let savePending = false;
   let draggedRow = null;
+  let activeRow = null;
+  let startY = null;
+  let isDragging = false;
+
   const ids = () => [...list.querySelectorAll('[data-category-id]')].map(row => row.dataset.categoryId);
 
-  function changed() {
+  function updateRanks() {
     const children = [...list.children].filter(el => el.hasAttribute('data-category-id'));
     children.forEach((row, index) => {
       const rank = row.querySelector('.category-position');
       if (rank) rank.textContent = digits(index + 1);
       const up = row.querySelector('.btn-order-up');
-      if (up) up.disabled = index === 0 || saving;
+      if (up) up.disabled = index === 0;
       const down = row.querySelector('.btn-order-down');
-      if (down) down.disabled = index === children.length - 1 || saving;
+      if (down) down.disabled = index === children.length - 1;
     });
-    state.dirty = JSON.stringify(ids()) !== JSON.stringify(baseline);
-    save.disabled = saving || !state.dirty;
-    status.textContent = state.dirty ? 'ترتیب جدید هنوز ذخیره نشده است.' : '';
   }
 
-  function swapRows(source, target, clientY) {
-    if (!source || !target || source === target || !list.contains(target)) return;
-    const rect = target.getBoundingClientRect();
-    const children = [...list.children].filter(c => c.hasAttribute('data-category-id'));
-    const srcIdx = children.indexOf(source);
-    const tgtIdx = children.indexOf(target);
-    if (srcIdx === -1 || tgtIdx === -1) return;
+  async function saveOrder() {
+    const ordered = ids();
+    if (JSON.stringify(ordered) === JSON.stringify(baseline)) return;
+    if (saving) {
+      savePending = true;
+      return;
+    }
+    saving = true;
+    savePending = false;
+    if (status) status.textContent = 'در حال ذخیره ترتیب…';
 
-    if (srcIdx < tgtIdx) {
-      if (clientY > rect.top + rect.height * 0.2) {
-        list.insertBefore(source, target.nextSibling);
-        changed();
-      }
-    } else {
-      if (clientY < rect.bottom - rect.height * 0.2) {
-        list.insertBefore(source, target);
-        changed();
+    try {
+      await api.call('category_reorder', {
+        method: 'POST',
+        fields: {ids: JSON.stringify(ordered), previous_ids: JSON.stringify(baseline)}
+      });
+      baseline = ordered;
+      state.categories = ordered.map(id => rows.find(r => String(r.cid) === id)).filter(Boolean);
+      state.dirty = false;
+      if (status) status.textContent = 'ترتیب جدید ذخیره شد.';
+      setTimeout(() => {
+        if (status && status.textContent === 'ترتیب جدید ذخیره شد.') {
+          status.textContent = '';
+        }
+      }, 3000);
+    } catch (error) {
+      if (status) status.textContent = error.message;
+      if (error.status === 401) lock(error.message);
+    } finally {
+      saving = false;
+      if (savePending) {
+        saveOrder();
       }
     }
   }
 
-  changed();
+  function swapRows(source, target, clientY) {
+    if (!source || !target || source === target || !list.contains(target)) return;
+    const all = [...list.querySelectorAll('[data-category-id]')];
+    const srcIdx = all.indexOf(source);
+    const tgtIdx = all.indexOf(target);
+    if (srcIdx === -1 || tgtIdx === -1) return;
+
+    const rect = target.getBoundingClientRect();
+    if (srcIdx < tgtIdx) {
+      if (clientY > rect.top + rect.height * 0.25) {
+        list.insertBefore(source, target.nextSibling);
+        updateRanks();
+      }
+    } else {
+      if (clientY < rect.bottom - rect.height * 0.25) {
+        list.insertBefore(source, target);
+        updateRanks();
+      }
+    }
+  }
+
+  updateRanks();
 
   list.addEventListener('click', event => {
-    if (saving) return;
     const upBtn = event.target.closest('.btn-order-up');
     if (upBtn) {
       event.preventDefault();
@@ -85,8 +122,9 @@ function bindCategoryOrder(rows) {
       const prev = row?.previousElementSibling;
       if (prev && prev.hasAttribute('data-category-id')) {
         list.insertBefore(row, prev);
-        changed();
+        updateRanks();
         upBtn.focus();
+        saveOrder();
       }
       return;
     }
@@ -97,14 +135,14 @@ function bindCategoryOrder(rows) {
       const next = row?.nextElementSibling;
       if (next && next.hasAttribute('data-category-id')) {
         list.insertBefore(next, row);
-        changed();
+        updateRanks();
         downBtn.focus();
+        saveOrder();
       }
     }
   });
 
   list.addEventListener('dragstart', event => {
-    if (saving) { event.preventDefault(); return; }
     if (event.target.closest('button:not(.category-drag)')) {
       event.preventDefault();
       return;
@@ -120,105 +158,104 @@ function bindCategoryOrder(rows) {
   });
 
   list.addEventListener('dragover', event => {
-    if (!draggedRow || saving) return;
+    if (!draggedRow) return;
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-    const target = event.target.closest('[data-category-id]');
+    const rows = [...list.querySelectorAll('[data-category-id]')];
+    const target = rows.find(r => {
+      if (r === draggedRow) return false;
+      const rect = r.getBoundingClientRect();
+      return event.clientY >= rect.top && event.clientY <= rect.bottom;
+    });
     if (target) {
       swapRows(draggedRow, target, event.clientY);
     }
   });
 
-  list.addEventListener('dragend', () => {
+  const onDragFinish = () => {
     if (draggedRow) {
       draggedRow.classList.remove('dragging');
       draggedRow = null;
-      changed();
+      updateRanks();
+      saveOrder();
     }
-  });
+  };
 
+  list.addEventListener('dragend', onDragFinish);
   list.addEventListener('drop', event => {
     event.preventDefault();
-    if (draggedRow) {
-      draggedRow.classList.remove('dragging');
-      draggedRow = null;
-      changed();
-    }
+    onDragFinish();
   });
+
+  function onPointerMove(event) {
+    if (!activeRow) return;
+    if (!isDragging) {
+      if (Math.abs(event.clientY - startY) < 4) return;
+      isDragging = true;
+      activeRow.classList.add('dragging');
+    }
+
+    const rows = [...list.querySelectorAll('[data-category-id]')];
+    let target = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-category-id]');
+    if (!target || target === activeRow || !list.contains(target)) {
+      target = rows.find(r => {
+        if (r === activeRow) return false;
+        const rect = r.getBoundingClientRect();
+        return event.clientY >= rect.top && event.clientY <= rect.bottom;
+      });
+    }
+    if (target) {
+      swapRows(activeRow, target, event.clientY);
+    }
+    if (event.clientY < 90) window.scrollBy(0, -18);
+    else if (event.clientY > window.innerHeight - 90) window.scrollBy(0, 18);
+  }
+
+  function onPointerUp() {
+    if (!activeRow) return;
+    const row = activeRow;
+    activeRow = null;
+    startY = null;
+    window.removeEventListener('pointermove', onPointerMove);
+    window.removeEventListener('pointerup', onPointerUp);
+    window.removeEventListener('pointercancel', onPointerUp);
+    if (isDragging) {
+      isDragging = false;
+      row.classList.remove('dragging');
+      updateRanks();
+      saveOrder();
+    }
+  }
 
   for (const handle of list.querySelectorAll('.category-drag')) {
     const row = handle.closest('[data-category-id]');
-    let startY = null, dragging = false;
     handle.addEventListener('pointerdown', event => {
-      if (saving || event.button !== 0) return;
+      if (event.button !== 0) return;
+      activeRow = row;
       startY = event.clientY;
-      dragging = false;
+      isDragging = false;
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+      window.addEventListener('pointercancel', onPointerUp);
       try { handle.setPointerCapture(event.pointerId); } catch (_) {}
     });
-    handle.addEventListener('pointermove', event => {
-      if (startY === null || saving) return;
-      if (!dragging) {
-        if (Math.abs(event.clientY - startY) < 4) return;
-        dragging = true;
-        row.classList.add('dragging');
-      }
 
-      let target = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-category-id]');
-      if (!target || target === row || !list.contains(target)) {
-        target = [...list.children].find(c => {
-          if (c === row || !c.hasAttribute('data-category-id')) return false;
-          const r = c.getBoundingClientRect();
-          return event.clientY >= r.top && event.clientY <= r.bottom;
-        });
-      }
-      if (target) {
-        swapRows(row, target, event.clientY);
-      }
-      if (event.clientY < 90) window.scrollBy(0, -18);
-      else if (event.clientY > window.innerHeight - 90) window.scrollBy(0, 18);
-    });
-    const finish = () => {
-      if (startY === null) return;
-      startY = null;
-      if (dragging) {
-        dragging = false;
-        row.classList.remove('dragging');
-        changed();
-      }
-    };
-    handle.addEventListener('pointerup', finish);
-    handle.addEventListener('pointercancel', finish);
-    handle.addEventListener('lostpointercapture', finish);
+    handle.addEventListener('pointermove', onPointerMove);
+    handle.addEventListener('pointerup', onPointerUp);
+    handle.addEventListener('pointercancel', onPointerUp);
+
     handle.addEventListener('keydown', event => {
-      if (saving || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+      if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return;
       event.preventDefault();
       const other = event.key === 'ArrowUp' ? row.previousElementSibling : row.nextElementSibling;
       if (other && other.hasAttribute('data-category-id')) {
         list.insertBefore(row, event.key === 'ArrowUp' ? other : other.nextSibling);
-        handle.focus(); changed();
+        handle.focus();
+        updateRanks();
+        saveOrder();
       }
     });
   }
-  save.onclick = async () => {
-    if (saving) return;
-    const ordered = ids();
-    saving = true; save.disabled = true; save.classList.add('saving'); list.inert = true;
-    status.textContent = 'در حال ذخیره…';
-    try {
-      await api.call('category_reorder', {method: 'POST', fields: {ids: JSON.stringify(ordered), previous_ids: JSON.stringify(baseline)}});
-      if (!list.isConnected) return;
-      baseline = ordered;
-      state.categories = ordered.map(id => rows.find(row => String(row.cid) === id)).filter(Boolean);
-      state.dirty = false;
-      status.textContent = 'ترتیب دسته‌ها روی سرور ذخیره شد.';
-    } catch (error) {
-      if (!list.isConnected) return;
-      status.textContent = error.message;
-      if (error.status === 401) lock(error.message);
-    } finally {
-      saving = false; save.classList.remove('saving'); list.inert = false; changed();
-    }
-  };
 }
 function categoryOptions(selected, all = false) {
   return (all ? '<option value="">همه دسته‌ها</option>' : '') + state.categories.map(c => `<option value="${e(c.cid)}" ${String(c.cid) === String(selected) ? 'selected' : ''}>${e(c.category_name)}</option>`).join('');
@@ -695,11 +732,9 @@ async function render(route) {
     }
   } else if (view === 'categories') {
     const rows = await categories();
-    html = `<div class="actions"><h1>دسته‌بندی‌ها</h1>${button('دسته جدید', 'category-new')}</div>
-      <p class="help" id="category-order-help">برای تغییر اولویت می‌توانید دسته‌ها را با ماوس یا لمس بکشید (Drag & Drop) یا از دکمه‌های ▲ و ▼ استفاده نمایید؛ سپس «ذخیره ترتیب» را بزنید.</p>
-      <div class="actions"><button id="save-category-order" class="primary compact" disabled>ذخیره ترتیب</button><span id="category-order-status" role="status" aria-live="polite"></span></div>
+    html = `<div class="actions"><h1>دسته‌بندی‌ها</h1><span id="category-order-status" role="status" aria-live="polite"></span>${button('دسته جدید', 'category-new')}</div>
       <ol id="category-list" class="category-list" aria-label="ترتیب دسته‌بندی‌ها">${rows.map((c, index) => { const src = imageUrl(c.category_image, api.endpoint); return `<li class="category-row" data-category-id="${e(c.cid)}" draggable="true">
-        <button type="button" class="category-drag" aria-label="جابه‌جایی ${e(c.category_name)}" aria-describedby="category-order-help" title="بکشید یا با دکمه‌های بالا/پایین جابه‌جا کنید"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h.01M16 5h.01M8 12h.01M16 12h.01M8 19h.01M16 19h.01" stroke-width="4"/></svg></button>
+        <button type="button" class="category-drag" aria-label="جابه‌جایی ${e(c.category_name)}" title="بکشید یا با دکمه‌های بالا/پایین جابه‌جا کنید"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h.01M16 5h.01M8 12h.01M16 12h.01M8 19h.01M16 19h.01" stroke-width="4"/></svg></button>
         <div class="category-order-controls">
           <button type="button" class="btn-order-move btn-order-up" data-move-up="${e(c.cid)}" aria-label="انتقال ${e(c.category_name)} به بالا" title="انتقال به بالا">▲</button>
           <span class="category-position">${digits(index + 1)}</span>

@@ -287,7 +287,7 @@ test('admin can access app download card on home and app releases table page',as
   }finally{f.dom.window.close();}
 });
 
-test('category list reorders with buttons, pointer, and keyboard, saves, and retains an uncertain order for retry', async () => {
+test('category list reorders with buttons, pointer, and keyboard and auto-saves', async () => {
  const f=await fixture();try {
   f.state.categories.push({cid:'62',category_name:'دسته دوم',category_image:'two.png',author:'نویسنده',status:'1'});
   await f.login(); await waitFor(()=>f.doc.querySelector('[data-route="categories"]'));
@@ -301,11 +301,13 @@ test('category list reorders with buttons, pointer, and keyboard, saves, and ret
   assert.equal(f.doc.querySelector('[data-category-id="61"] .btn-order-up').disabled, true);
   firstDown.click();
   assert.deepEqual(order(),['62','61']);
+  await waitFor(()=>f.doc.querySelector('#category-order-status').textContent.includes('ذخیره شد'));
 
   // Move back with Move Up button
   const secondUp = f.doc.querySelector('[data-category-id="61"] .btn-order-up');
   secondUp.click();
   assert.deepEqual(order(),['61','62']);
+  await waitFor(()=>f.doc.querySelector('#category-order-status').textContent.includes('ذخیره شد'));
 
   const handle=f.doc.querySelector('.category-drag');handle.setPointerCapture=()=>{};
   f.doc.elementFromPoint=()=>f.doc.querySelector('[data-category-id="62"]');
@@ -314,12 +316,11 @@ test('category list reorders with buttons, pointer, and keyboard, saves, and ret
   handle.dispatchEvent(new f.dom.window.MouseEvent('pointermove',{clientY:100,clientX:100}));
   handle.dispatchEvent(new f.dom.window.MouseEvent('pointerup'));
   assert.deepEqual(order(),['62','61']);
-  f.state.loseNextResponse=true;f.click('#save-category-order');
-  await waitFor(()=>!f.doc.querySelector('#save-category-order').disabled);
-  assert.deepEqual(order(),['62','61']);
-  f.click('#save-category-order');await waitFor(()=>f.doc.querySelector('#category-order-status').textContent.includes('ذخیره شد'));
+  await waitFor(()=>f.doc.querySelector('#category-order-status').textContent.includes('ذخیره شد'));
   assert.deepEqual(f.state.categories.map(c=>c.cid),['62','61']);
+
   handle.dispatchEvent(new f.dom.window.KeyboardEvent('keydown',{key:'ArrowUp',bubbles:true,cancelable:true}));
   assert.deepEqual(order(),['61','62']);
+  await waitFor(()=>f.doc.querySelector('#category-order-status').textContent.includes('ذخیره شد'));
  }finally{f.dom.window.close();}
 });
