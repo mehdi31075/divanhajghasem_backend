@@ -287,13 +287,26 @@ test('admin can access app download card on home and app releases table page',as
   }finally{f.dom.window.close();}
 });
 
-test('category list reorders with pointer and keyboard, saves, and retains an uncertain order for retry', async () => {
+test('category list reorders with buttons, pointer, and keyboard, saves, and retains an uncertain order for retry', async () => {
  const f=await fixture();try {
   f.state.categories.push({cid:'62',category_name:'دسته دوم',category_image:'two.png',author:'نویسنده',status:'1'});
   await f.login(); await waitFor(()=>f.doc.querySelector('[data-route="categories"]'));
   f.click('[data-route="categories"]');await waitFor(()=>f.doc.querySelector('#category-list'));
   assert.equal(f.doc.querySelector('.category-card'),null);
   const order=()=>[...f.doc.querySelectorAll('[data-category-id]')].map(r=>r.dataset.categoryId);
+
+  // Test Move Down button
+  const firstDown = f.doc.querySelector('[data-category-id="61"] .btn-order-down');
+  assert.ok(firstDown);
+  assert.equal(f.doc.querySelector('[data-category-id="61"] .btn-order-up').disabled, true);
+  firstDown.click();
+  assert.deepEqual(order(),['62','61']);
+
+  // Move back with Move Up button
+  const secondUp = f.doc.querySelector('[data-category-id="61"] .btn-order-up');
+  secondUp.click();
+  assert.deepEqual(order(),['61','62']);
+
   const handle=f.doc.querySelector('.category-drag');handle.setPointerCapture=()=>{};
   f.doc.elementFromPoint=()=>f.doc.querySelector('[data-category-id="62"]');
   handle.dispatchEvent(new f.dom.window.MouseEvent('pointerdown',{clientY:0,button:0}));

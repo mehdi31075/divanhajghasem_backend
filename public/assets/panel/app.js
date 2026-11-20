@@ -32,32 +32,121 @@ function preview(frame, html) {
 async function categories() { state.categories = await api.call(''); return state.categories; }
 function bindCategoryOrder(rows) {
   const list = $('#category-list'), save = $('#save-category-order'), status = $('#category-order-status');
+  if (!list) return;
   let baseline = rows.map(row => String(row.cid));
   let saving = false;
+  let draggedRow = null;
   const ids = () => [...list.querySelectorAll('[data-category-id]')].map(row => row.dataset.categoryId);
+
   function changed() {
-    [...list.children].forEach((row, index) => {
+    const children = [...list.children].filter(el => el.hasAttribute('data-category-id'));
+    children.forEach((row, index) => {
       const rank = row.querySelector('.category-position');
       if (rank) rank.textContent = digits(index + 1);
+      const up = row.querySelector('.btn-order-up');
+      if (up) up.disabled = index === 0 || saving;
+      const down = row.querySelector('.btn-order-down');
+      if (down) down.disabled = index === children.length - 1 || saving;
     });
     state.dirty = JSON.stringify(ids()) !== JSON.stringify(baseline);
     save.disabled = saving || !state.dirty;
     status.textContent = state.dirty ? 'ترتیب جدید هنوز ذخیره نشده است.' : '';
   }
+
+  changed();
+
+  list.addEventListener('click', event => {
+    if (saving) return;
+    const upBtn = event.target.closest('.btn-order-up');
+    if (upBtn) {
+      event.preventDefault();
+      const row = upBtn.closest('[data-category-id]');
+      const prev = row?.previousElementSibling;
+      if (prev && prev.hasAttribute('data-category-id')) {
+        list.insertBefore(row, prev);
+        changed();
+        upBtn.focus();
+      }
+      return;
+    }
+    const downBtn = event.target.closest('.btn-order-down');
+    if (downBtn) {
+      event.preventDefault();
+      const row = downBtn.closest('[data-category-id]');
+      const next = row?.nextElementSibling;
+      if (next && next.hasAttribute('data-category-id')) {
+        list.insertBefore(next, row);
+        changed();
+        downBtn.focus();
+      }
+    }
+  });
+
+  list.addEventListener('dragstart', event => {
+    if (saving) { event.preventDefault(); return; }
+    const row = event.target.closest('[data-category-id]');
+    if (!row) return;
+    draggedRow = row;
+    row.classList.add('dragging');
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', row.dataset.categoryId || '');
+    }
+  });
+
+  list.addEventListener('dragover', event => {
+    if (!draggedRow || saving) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    const target = event.target.closest('[data-category-id]');
+    if (target && target !== draggedRow && list.contains(target)) {
+      const rect = target.getBoundingClientRect();
+      const isAfter = event.clientY > rect.top + rect.height / 2;
+      list.insertBefore(draggedRow, isAfter ? target.nextSibling : target);
+      changed();
+    }
+  });
+
+  list.addEventListener('dragend', () => {
+    if (draggedRow) {
+      draggedRow.classList.remove('dragging');
+      draggedRow = null;
+      changed();
+    }
+  });
+
+  list.addEventListener('drop', event => {
+    event.preventDefault();
+    if (draggedRow) {
+      draggedRow.classList.remove('dragging');
+      draggedRow = null;
+      changed();
+    }
+  });
+
   for (const handle of list.querySelectorAll('.category-drag')) {
     const row = handle.closest('[data-category-id]');
     let startY = null, dragging = false;
     handle.addEventListener('pointerdown', event => {
       if (saving || event.button !== 0) return;
+      event.preventDefault();
       startY = event.clientY;
-      handle.setPointerCapture(event.pointerId);
+      try { handle.setPointerCapture(event.pointerId); } catch (_) {}
     });
     handle.addEventListener('pointermove', event => {
       if (startY === null || saving) return;
-      if (!dragging && Math.abs(event.clientY - startY) < 5) return;
+      if (!dragging && Math.abs(event.clientY - startY) < 4) return;
       dragging = true;
       row.classList.add('dragging');
-      const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-category-id]');
+
+      let target = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-category-id]');
+      if (!target || target === row) {
+        target = [...list.children].find(c => {
+          if (c === row || !c.hasAttribute('data-category-id')) return false;
+          const r = c.getBoundingClientRect();
+          return event.clientY >= r.top && event.clientY <= r.bottom;
+        });
+      }
       if (target && target !== row && list.contains(target)) {
         const rect = target.getBoundingClientRect();
         list.insertBefore(row, event.clientY < rect.top + rect.height / 2 ? target : target.nextSibling);
@@ -77,8 +166,10 @@ function bindCategoryOrder(rows) {
       if (saving || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
       event.preventDefault();
       const other = event.key === 'ArrowUp' ? row.previousElementSibling : row.nextElementSibling;
-      if (other) list.insertBefore(row, event.key === 'ArrowUp' ? other : other.nextSibling);
-      handle.focus(); changed();
+      if (other && other.hasAttribute('data-category-id')) {
+        list.insertBefore(row, event.key === 'ArrowUp' ? other : other.nextSibling);
+        handle.focus(); changed();
+      }
     });
   }
   save.onclick = async () => {
@@ -90,7 +181,7 @@ function bindCategoryOrder(rows) {
       await api.call('category_reorder', {method: 'POST', fields: {ids: JSON.stringify(ordered), previous_ids: JSON.stringify(baseline)}});
       if (!list.isConnected) return;
       baseline = ordered;
-      state.categories = ordered.map(id => rows.find(row => String(row.cid) === id));
+      state.categories = ordered.map(id => rows.find(row => String(row.cid) === id)).filter(Boolean);
       state.dirty = false;
       status.textContent = 'ترتیب دسته‌ها روی سرور ذخیره شد.';
     } catch (error) {
@@ -98,7 +189,7 @@ function bindCategoryOrder(rows) {
       status.textContent = error.message;
       if (error.status === 401) lock(error.message);
     } finally {
-      saving = false; list.inert = false; save.disabled = !state.dirty;
+      saving = false; list.inert = false; changed();
     }
   };
 }
@@ -578,11 +669,16 @@ async function render(route) {
   } else if (view === 'categories') {
     const rows = await categories();
     html = `<div class="actions"><h1>دسته‌بندی‌ها</h1>${button('دسته جدید', 'category-new')}</div>
-      <p class="help" id="category-order-help">دستگیرهٔ کنار هر دسته را بکشید تا اولویت آن تغییر کند؛ سپس ترتیب را ذخیره کنید. با کلیدهای بالا و پایین هم می‌توانید جابه‌جا کنید.</p>
+      <p class="help" id="category-order-help">برای تغییر اولویت می‌توانید دسته‌ها را با ماوس یا لمس بکشید (Drag & Drop) یا از دکمه‌های ▲ و ▼ استفاده نمایید؛ سپس «ذخیره ترتیب» را بزنید.</p>
       <div class="actions"><button id="save-category-order" class="primary compact" disabled>ذخیره ترتیب</button><span id="category-order-status" role="status" aria-live="polite"></span></div>
-      <ol id="category-list" class="category-list" aria-label="ترتیب دسته‌بندی‌ها">${rows.map((c, index) => { const src = imageUrl(c.category_image, api.endpoint); return `<li class="category-row" data-category-id="${e(c.cid)}">
-        <button type="button" class="category-drag" aria-label="جابه‌جایی ${e(c.category_name)}" aria-describedby="category-order-help" title="بکشید یا از کلیدهای بالا و پایین استفاده کنید"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h.01M16 5h.01M8 12h.01M16 12h.01M8 19h.01M16 19h.01" stroke-width="4"/></svg></button>
-        <span class="category-position">${digits(index + 1)}</span>${src ? `<img src="${e(src)}" alt="" loading="lazy" draggable="false">` : '<span class="category-thumbnail">بدون تصویر</span>'}
+      <ol id="category-list" class="category-list" aria-label="ترتیب دسته‌بندی‌ها">${rows.map((c, index) => { const src = imageUrl(c.category_image, api.endpoint); return `<li class="category-row" data-category-id="${e(c.cid)}" draggable="true">
+        <button type="button" class="category-drag" aria-label="جابه‌جایی ${e(c.category_name)}" aria-describedby="category-order-help" title="بکشید یا با دکمه‌های بالا/پایین جابه‌جا کنید"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h.01M16 5h.01M8 12h.01M16 12h.01M8 19h.01M16 19h.01" stroke-width="4"/></svg></button>
+        <div class="category-order-controls">
+          <button type="button" class="btn-order-move btn-order-up" data-move-up="${e(c.cid)}" aria-label="انتقال ${e(c.category_name)} به بالا" title="انتقال به بالا">▲</button>
+          <span class="category-position">${digits(index + 1)}</span>
+          <button type="button" class="btn-order-move btn-order-down" data-move-down="${e(c.cid)}" aria-label="انتقال ${e(c.category_name)} به پایین" title="انتقال به پایین">▼</button>
+        </div>
+        ${src ? `<img src="${e(src)}" alt="" loading="lazy" draggable="false">` : '<span class="category-thumbnail">بدون تصویر</span>'}
         <div class="category-description"><strong>${e(c.category_name)}</strong><small>${e(c.author)}</small></div>
         <div class="actions">${button('ویرایش', `category/${c.cid}`)}<button class="danger" data-delete="category" data-id="${e(c.cid)}" data-label="${e(c.category_name)}">حذف</button></div></li>`; }).join('') || '<li class="empty">دسته‌ای ثبت نشده است.</li>'}</ol>`;
     after = () => bindCategoryOrder(rows);
