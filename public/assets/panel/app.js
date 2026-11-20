@@ -1083,8 +1083,8 @@ async function render(route) {
             <div style="background:#f8faf8;border:1px solid var(--line);border-radius:14px;padding:16px 20px;${c.parent_id ? 'margin-right:28px;border-right:3px solid var(--accent);' : ''}">
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
                 <div style="display:flex;align-items:center;gap:10px">
-                  <strong>${e(c.user_name || 'کاربر')}</strong>
-                  ${c.user_is_admin ? '<span class="category-badge" style="background:#e0f2fe;color:#0369a1;padding:2px 8px;font-size:11px">مدیر</span>' : ''}
+                  <strong>${c.user_is_admin ? 'پشتیبان دیوان انصارالحسین(ع)' : e(c.user_name || 'کاربر')}</strong>
+                  ${c.user_is_admin ? `<small style="color:var(--muted)">(${e(c.user_name)})</small><span class="category-badge" style="background:#e0f2fe;color:#0369a1;padding:2px 8px;font-size:11px">پشتیبان دیوان</span>` : ''}
                   ${c.parent_id ? '<span style="font-size:12px;color:var(--muted)">در پاسخ به نظر قبلی</span>' : ''}
                 </div>
                 <div style="display:flex;align-items:center;gap:12px">

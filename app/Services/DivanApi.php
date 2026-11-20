@@ -265,12 +265,13 @@ class DivanApi
                     throw new ApiError(422, 'invalid_announcement_id', 'شناسه اعلام الزامی است.');
                 }
                 $comments = array_map(static function ($c) {
+                    $isAdmin = ! empty($c['user_is_admin']);
                     return [
                         'id' => (string) $c['id'],
                         'announcement_id' => (string) $c['announcement_id'],
                         'user_id' => (string) $c['user_id'],
-                        'user_name' => (string) $c['user_name'],
-                        'user_is_admin' => ! empty($c['user_is_admin']),
+                        'user_name' => $isAdmin ? 'پشتیبان دیوان انصارالحسین(ع)' : (string) $c['user_name'],
+                        'user_is_admin' => $isAdmin,
                         'parent_id' => $c['parent_id'] !== null ? (string) $c['parent_id'] : null,
                         'comment' => (string) $c['comment'],
                         'created_at' => gmdate('Y-m-d\TH:i:s\Z', (int) $c['created_at']),
