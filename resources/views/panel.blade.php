@@ -51,7 +51,6 @@
         <a href="#home"><svg><use href="#i-home"/></svg><span>پیشخوان</span></a>
         <a href="#posts"><svg><use href="#i-book"/></svg><span>نوشته‌ها</span></a>
         <a href="#announcements"><svg><use href="#i-bell"/></svg><span>اعلام‌ها</span></a>
-        <a href="#announcements-public"><svg><use href="#i-bell"/></svg><span>اعلام‌های عمومی (صفحه اول)</span></a>
         <a href="#categories"><svg><use href="#i-grid"/></svg><span>دسته‌بندی‌ها</span></a>
         <a href="#media"><svg><use href="#i-media"/></svg><span>کتابخانهٔ رسانه</span></a>
         <a href="#support"><svg><use href="#i-support"/></svg><span>پشتیبانی</span></a>

@@ -840,8 +840,7 @@ async function render(route) {
         async target => (await api.call('pages')).pages.some(p => p.slug === target.slug && p.title === target.title && p.html_body === target.html_body && p.revision === Number(target.revision) + 1),
         () => render('pages'));
     };
-  } else if (view === 'announcements' || view === 'announcements-public' || view === 'pages') {
-    const isPublicOnly = view === 'announcements-public' || view === 'pages';
+  } else if (view === 'announcements' || view === 'pages' || view === 'announcements-public') {
     const [result, usersRes] = await Promise.all([
       api.call('announcements'),
       api.call('users').catch(() => ({users: []})),
@@ -849,20 +848,30 @@ async function render(route) {
     const announcements = result.announcements || [];
     const publicCount = announcements.filter(a => a.is_public).length;
     const privateCount = announcements.filter(a => !a.is_public).length;
+    const iconSymbols = {
+      campaign: '📢',
+      event: '📅',
+      book: '📖',
+      message: '✉️',
+      star: '⭐',
+      info: 'ℹ️',
+      volume: '🔊',
+      bookmark: '🔖',
+    };
 
     html = `
       <div class="actions">
-        <h1>${isPublicOnly ? 'اعلام‌های عمومی (صفحه اول)' : 'اعلام‌ها و اخبار مهم'}</h1>
-        ${button(isPublicOnly ? 'اعلام عمومی جدید' : 'اعلام جدید', isPublicOnly ? 'announcement-new-public' : 'announcement-new')}
+        <h1>اعلام‌ها و اخبار مهم</h1>
+        ${button('اعلام جدید', 'announcement-new')}
       </div>
-      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
-        <a href="#announcements" class="button ${!isPublicOnly ? 'primary' : ''}" style="min-height:38px;padding:6px 16px;font-size:13px">همه اعلام‌ها (${digits(announcements.length)})</a>
-        <a href="#announcements-public" class="button ${isPublicOnly ? 'primary' : ''}" style="min-height:38px;padding:6px 16px;font-size:13px">اعلام‌های عمومی — صفحه اول (${digits(publicCount)})</a>
+      <div class="filters" style="margin-bottom:16px;padding:12px 18px;display:flex;gap:10px;align-items:center;background:#fff;border-radius:14px;border:1px solid var(--line)">
+        <span style="font-size:13px;font-weight:600;color:var(--muted)">نمایش:</span>
+        <button type="button" id="tab-all" class="compact primary" style="min-height:36px;padding:6px 14px;font-size:13px">همه (${digits(announcements.length)})</button>
+        <button type="button" id="tab-public" class="compact" style="min-height:36px;padding:6px 14px;font-size:13px">عمومی — صفحه اول (${digits(publicCount)})</button>
+        <button type="button" id="tab-private" class="compact" style="min-height:36px;padding:6px 14px;font-size:13px">خصوصی — کاربران (${digits(privateCount)})</button>
       </div>
       <p class="help">
-        ${isPublicOnly 
-          ? 'اعلام‌های عمومی در صفحهٔ اول اپلیکیشن موبایل برای همهٔ کاربران و بازدیدکنندگان نمایش داده می‌شوند.' 
-          : 'اعلام‌های عمومی در صفحهٔ نخست اپ، و اعلام‌های اختصاصی فقط برای کاربران انتخاب‌شده در برگهٔ اعلام‌های اپ نمایش داده می‌شوند.'}
+        اعلام‌های عمومی در صفحه نخست اپلیکیشن برای همه نمایش داده می‌شوند؛ اعلام‌های اختصاصی فقط برای کاربران انتخاب‌شده در برگه اعلام‌ها نمایش داده می‌شوند.
       </p>
       <section class="card table-wrap">
         <table>
@@ -870,42 +879,69 @@ async function render(route) {
             <tr>
               <th>عنوان اعلام</th>
               <th>نوع / گیرندگان</th>
+              <th>آیکون</th>
               <th>عنوان فرعی / تاریخ</th>
               <th>تاریخ ثبت</th>
               <th>عملیات</th>
             </tr>
           </thead>
-          <tbody>
-            ${announcements
-              .filter(a => isPublicOnly ? !!a.is_public : true)
-              .map(a => {
-                const count = a.user_ids ? a.user_ids.length : 0;
-                const typeBadge = a.is_public
-                  ? '<span class="category-badge" style="background:#dcfce7;color:#166534;font-weight:700">عمومی (صفحه اول)</span>'
-                  : (count > 0 
-                      ? `<span class="category-badge" style="background:#e0e7ff;color:#3730a3">خصوصی (${digits(count)} کاربر)</span>`
-                      : '<span class="category-badge" style="background:#fee2e2;color:#991b1b">خصوصی (بدون کاربر)</span>');
-                return `<tr>
-                  <td><strong>${e(a.title)}</strong></td>
-                  <td>${typeBadge}</td>
-                  <td><small>${e(a.subtitle || '—')}</small></td>
-                  <td><small>${e(displayDate(a.created_at))}</small></td>
-                  <td>
-                    <div class="table-actions">
-                      ${button('مشاهده', `announcement-read/${a.id}`)}
-                      ${button('ویرایش', `announcement/${a.id}`)}
-                      <button type="button" class="danger compact" data-delete="announcement" data-id="${e(a.id)}" data-label="${e(a.title)}">حذف</button>
-                    </div>
-                  </td>
-                </tr>`;
+          <tbody id="announcements-tbody">
+            ${announcements.map(a => {
+              const count = a.user_ids ? a.user_ids.length : 0;
+              const typeBadge = a.is_public
+                ? '<span class="category-badge" style="background:#dcfce7;color:#166534;font-weight:700">عمومی (صفحه اول)</span>'
+                : (count > 0 
+                    ? `<span class="category-badge" style="background:#e0e7ff;color:#3730a3">خصوصی (${digits(count)} کاربر)</span>`
+                    : '<span class="category-badge" style="background:#fee2e2;color:#991b1b">خصوصی (بدون کاربر)</span>');
+              const sym = iconSymbols[a.icon] || '📢';
+              return `<tr data-public="${a.is_public ? '1' : '0'}">
+                <td><strong>${e(a.title)}</strong></td>
+                <td>${typeBadge}</td>
+                <td><span style="font-size:18px" title="${e(a.icon || 'campaign')}">${sym}</span></td>
+                <td><small>${e(a.subtitle || '—')}</small></td>
+                <td><small>${e(displayDate(a.created_at))}</small></td>
+                <td>
+                  <div class="table-actions">
+                    ${button('مشاهده', `announcement-read/${a.id}`)}
+                    ${button('ویرایش', `announcement/${a.id}`)}
+                    <button type="button" class="danger compact" data-delete="announcement" data-id="${e(a.id)}" data-label="${e(a.title)}">حذف</button>
+                  </div>
+                </td>
+              </tr>`;
             }).join('')}
           </tbody>
         </table>
-        ${announcements.filter(a => isPublicOnly ? !!a.is_public : true).length ? '' : '<p class="empty">هنوز هیچ اعلامی در این بخش ثبت نشده است.</p>'}
+        ${announcements.length ? '' : '<p class="empty">هنوز هیچ اعلامی در این بخش ثبت نشده است.</p>'}
       </section>
     `;
-  } else if (view === 'announcement' || view === 'announcement-new' || view === 'announcement-new-public') {
-    const isNewPublic = view === 'announcement-new-public';
+
+    after = () => {
+      const tbody = $('#announcements-tbody');
+      const btnAll = $('#tab-all');
+      const btnPublic = $('#tab-public');
+      const btnPrivate = $('#tab-private');
+
+      const setTab = mode => {
+        [btnAll, btnPublic, btnPrivate].forEach(b => b?.classList.remove('primary'));
+        if (mode === 'public') btnPublic?.classList.add('primary');
+        else if (mode === 'private') btnPrivate?.classList.add('primary');
+        else btnAll?.classList.add('primary');
+
+        if (tbody) {
+          for (const row of tbody.querySelectorAll('tr')) {
+            const isPub = row.dataset.public === '1';
+            if (mode === 'public') row.style.display = isPub ? '' : 'none';
+            else if (mode === 'private') row.style.display = !isPub ? '' : 'none';
+            else row.style.display = '';
+          }
+        }
+      };
+
+      btnAll?.addEventListener('click', () => setTab('all'));
+      btnPublic?.addEventListener('click', () => setTab('public'));
+      btnPrivate?.addEventListener('click', () => setTab('private'));
+    };
+  } else if (view === 'announcement' || view === 'announcement-new') {
     const [originalRes, usersRes] = await Promise.all([
       view === 'announcement' ? api.call('announcements', {query: {id}}) : Promise.resolve(null),
       api.call('users').catch(() => ({users: []})),
@@ -914,12 +950,24 @@ async function render(route) {
     if (view === 'announcement' && !original) throw new ApiError('اعلام مورد نظر یافت نشد.');
     const users = usersRes.users || [];
     const selectedIds = new Set((original?.user_ids || []).map(String));
-    const isPublicDefault = original ? !!original.is_public : isNewPublic;
+    const isPublicDefault = original ? !!original.is_public : false;
+    const currentIcon = original?.icon || 'campaign';
+
+    const iconChoices = [
+      {id: 'campaign', label: 'اطلاعیه و خبر', sym: '📢'},
+      {id: 'event', label: 'مراسم و هیئت', sym: '📅'},
+      {id: 'book', label: 'کتاب و سخن', sym: '📖'},
+      {id: 'message', label: 'پیام و ارتباط', sym: '✉️'},
+      {id: 'star', label: 'ویژه و مهم', sym: '⭐'},
+      {id: 'info', label: 'راهنما و نکات', sym: 'ℹ️'},
+      {id: 'volume', label: 'صوت و نوا', sym: '🔊'},
+      {id: 'bookmark', label: 'نشانک و یادآوری', sym: '🔖'},
+    ];
 
     html = `
       <div class="actions">
-        <h1>${original ? 'ویرایش اعلام' : (isNewPublic ? 'اعلام عمومی جدید' : 'اعلام جدید')}</h1>
-        ${button('بازگشت', isNewPublic || original?.is_public ? 'announcements-public' : 'announcements')}
+        <h1>${original ? 'ویرایش اعلام' : 'اعلام جدید'}</h1>
+        ${button('بازگشت', 'announcements')}
       </div>
       ${original ? `<p class="article-dates">ایجاد: ${e(displayDate(original.created_at))}　·　آخرین ویرایش: ${e(displayDate(original.updated_at))}</p>` : ''}
       <form id="announcement-form" class="card form-card">
@@ -938,6 +986,19 @@ async function render(route) {
         <label>عنوان فرعی یا تاریخ
           <input name="subtitle" maxlength="255" value="${e(original?.subtitle || '')}" placeholder="مثال: اطلاعیه شماره ۱ — پاییز ۱۴۰۳">
         </label>
+
+        <label>آیکون موضوعی اعلام
+          <div class="announcement-icon-picker" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:6px">
+            ${iconChoices.map(item => `
+              <label class="icon-choice-label" style="display:flex;align-items:center;gap:8px;padding:8px 14px;border:1.5px solid ${currentIcon === item.id ? '#153f37' : '#d7e0d8'};border-radius:12px;background:${currentIcon === item.id ? '#edf4ee' : '#fff'};cursor:pointer;font-size:14px;transition:all .15s">
+                <input type="radio" name="icon" value="${item.id}" ${currentIcon === item.id ? 'checked' : ''} style="display:none">
+                <span style="font-size:18px">${item.sym}</span>
+                <strong>${item.label}</strong>
+              </label>
+            `).join('')}
+          </div>
+        </label>
+
         <div class="users-selection-box" id="users-selection-box">
           <div class="users-selection-header">
             <div>
@@ -1002,6 +1063,20 @@ async function render(route) {
         toggleUsersBox();
       }
 
+      form.querySelectorAll('.icon-choice-label').forEach(lbl => {
+        lbl.addEventListener('click', () => {
+          form.querySelectorAll('.icon-choice-label').forEach(l => {
+            l.style.borderColor = '#d7e0d8';
+            l.style.background = '#fff';
+          });
+          lbl.style.borderColor = '#153f37';
+          lbl.style.background = '#edf4ee';
+          const radio = lbl.querySelector('input[type=radio]');
+          if (radio) radio.checked = true;
+          markDirty();
+        });
+      });
+
       const countBadge = $('#users-count-badge');
       const updateCount = () => {
         const checkedCount = form.querySelectorAll('.user-check-item input[type=checkbox]:checked').length;
@@ -1049,11 +1124,13 @@ async function render(route) {
       const fields = () => {
         const isPub = form.elements.namedItem('is_public')?.checked ? 1 : 0;
         const checkedIds = isPub ? [] : [...form.querySelectorAll('.user-check-item input[type=checkbox]:checked')].map(cb => cb.value);
+        const chosenIcon = form.querySelector('input[name="icon"]:checked')?.value || 'campaign';
         return {
           title: form.elements.namedItem('title').value,
           subtitle: form.elements.namedItem('subtitle').value,
           description: editorHtml(body),
           is_public: isPub,
+          icon: chosenIcon,
           user_ids: isPub ? '[]' : JSON.stringify(checkedIds),
           ...(original ? {id: String(id)} : {}),
         };
@@ -1067,7 +1144,7 @@ async function render(route) {
           const list = (await api.call('announcements')).announcements;
           return list.some(a => (original ? String(a.id) === String(id) : true) && a.title === target.title);
         },
-        () => render(form.elements.namedItem('is_public')?.checked ? 'announcements-public' : 'announcements')
+        () => render('announcements')
       );
     };
   } else if (view === 'announcement-read') {

@@ -175,6 +175,7 @@ final class AnnouncementsApiTest extends TestCase
                 'subtitle' => 'مقدمه',
                 'description' => '<p>سلام</p>',
                 'is_public' => 1,
+                'icon' => 'bookmark',
                 'created_at' => $now,
                 'updated_at' => $now,
             ],
@@ -188,5 +189,6 @@ final class AnnouncementsApiTest extends TestCase
         self::assertSame('1', $res['announcements'][0]['id']);
         self::assertSame('سخن اول', $res['announcements'][0]['title']);
         self::assertTrue($res['announcements'][0]['is_public']);
+        self::assertSame('bookmark', $res['announcements'][0]['icon']);
     }
 }

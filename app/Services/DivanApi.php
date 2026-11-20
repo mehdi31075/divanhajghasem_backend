@@ -267,6 +267,7 @@ class DivanApi
                         'subtitle' => (string) ($row['subtitle'] ?? ''),
                         'description' => (string) $row['description'],
                         'is_public' => true,
+                        'icon' => (string) ($row['icon'] ?? 'campaign'),
                         'created_at' => gmdate('Y-m-d\TH:i:s\Z', (int) $row['created_at']),
                         'updated_at' => gmdate('Y-m-d\TH:i:s\Z', (int) $row['updated_at']),
                     ];
@@ -319,6 +320,7 @@ class DivanApi
                             'subtitle' => (string) ($row['subtitle'] ?? ''),
                             'description' => (string) $row['description'],
                             'is_public' => false,
+                            'icon' => (string) ($row['icon'] ?? 'campaign'),
                             'created_at' => gmdate('Y-m-d\TH:i:s\Z', (int) $row['created_at']),
                             'updated_at' => gmdate('Y-m-d\TH:i:s\Z', (int) $row['updated_at']),
                         ];
@@ -706,6 +708,7 @@ class DivanApi
                         'subtitle' => (string) ($row['subtitle'] ?? ''),
                         'description' => (string) $row['description'],
                         'is_public' => ! empty($row['is_public']),
+                        'icon' => (string) ($row['icon'] ?? 'campaign'),
                         'user_ids' => is_array($row['user_ids'] ?? null)
                             ? array_values(array_map('strval', $row['user_ids']))
                             : array_values(array_filter(explode(',', (string) ($row['user_ids'] ?? '')))),
@@ -727,6 +730,7 @@ class DivanApi
                         'subtitle' => (string) ($row['subtitle'] ?? ''),
                         'description' => (string) $row['description'],
                         'is_public' => ! empty($row['is_public']),
+                        'icon' => (string) ($row['icon'] ?? 'campaign'),
                         'user_ids' => $userIds,
                         'created_at' => gmdate('Y-m-d\TH:i:s\Z', (int) $row['created_at']),
                         'updated_at' => gmdate('Y-m-d\TH:i:s\Z', (int) $row['updated_at']),
@@ -739,6 +743,7 @@ class DivanApi
             $subtitle = $input['subtitle'] ?? '';
             $description = $input['description'] ?? null;
             $isPublic = ! empty($input['is_public']);
+            $icon = isset($input['icon']) && is_string($input['icon']) && trim($input['icon']) !== '' ? trim($input['icon']) : 'campaign';
             if (! is_string($title) || trim($title) === '' || mb_strlen($title) > 500) {
                 throw new ApiError(422, 'invalid_title', 'عنوان اعلام الزامی است و حداکثر ۵۰۰ نویسه است.');
             }
@@ -756,11 +761,11 @@ class DivanApi
                 if (! $this->store->announcement($id)) {
                     throw new ApiError(404, 'announcement_not_found', 'اعلام پیدا نشد.');
                 }
-                $this->store->updateAnnouncement($id, trim($title), is_string($subtitle) ? trim($subtitle) : null, trim($description), $userIds, $now, $isPublic);
+                $this->store->updateAnnouncement($id, trim($title), is_string($subtitle) ? trim($subtitle) : null, trim($description), $userIds, $now, $isPublic, $icon);
                 return ['ok' => true, 'id' => (string) $id];
             }
 
-            $id = $this->store->createAnnouncement(trim($title), is_string($subtitle) ? trim($subtitle) : null, trim($description), $userIds, $now, $isPublic);
+            $id = $this->store->createAnnouncement(trim($title), is_string($subtitle) ? trim($subtitle) : null, trim($description), $userIds, $now, $isPublic, $icon);
             return ['ok' => true, 'id' => (string) $id];
         }
         if ($action === 'announcement_delete') {
