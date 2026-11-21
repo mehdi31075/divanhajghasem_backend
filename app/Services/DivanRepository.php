@@ -18,6 +18,51 @@ class DivanRepository
         return ['affected' => $affected, 'id' => DB::getPdo()->lastInsertId()];
     }
 
+    public function ensureAuthTables(): void
+    {
+        try {
+            if (! Schema::hasTable('divan_api_tokens')) {
+                Schema::create('divan_api_tokens', function ($table) {
+                    $table->char('token_hash', 64)->primary();
+                    $table->string('username', 255);
+                    $table->char('password_digest', 64);
+                    $table->unsignedInteger('created_at');
+                    $table->unsignedInteger('expires_at')->index();
+                });
+            }
+            if (! Schema::hasTable('divan_api_login_attempts')) {
+                Schema::create('divan_api_login_attempts', function ($table) {
+                    $table->id();
+                    $table->char('ip_hash', 64);
+                    $table->unsignedInteger('attempted_at')->index();
+                    $table->index(['ip_hash', 'attempted_at']);
+                });
+            }
+        } catch (\Throwable) {}
+    }
+
+    public function ensurePagesTable(): void
+    {
+        try {
+            if (! Schema::hasTable('divan_pages')) {
+                Schema::create('divan_pages', function ($table) {
+                    $table->string('slug', 40)->primary();
+                    $table->string('title', 255);
+                    $table->longText('html_body');
+                    $table->unsignedInteger('revision')->default(1);
+                    $table->unsignedInteger('updated_at');
+                });
+                $dataPath = database_path('data/content_pages.json');
+                if (file_exists($dataPath)) {
+                    $pages = json_decode(file_get_contents($dataPath), true) ?: [];
+                    foreach ($pages as $page) {
+                        DB::table('divan_pages')->insertOrIgnore($page + ['revision' => 1, 'updated_at' => time()]);
+                    }
+                }
+            }
+        } catch (\Throwable) {}
+    }
+
     public function user($username)
     {
         $rows = $this->query('SELECT Username, Password FROM tbl_user WHERE Username = ?', [$username]);
@@ -27,6 +72,7 @@ class DivanRepository
 
     public function failedLogins($ip, $since)
     {
+        $this->ensureAuthTables();
         $this->query('DELETE FROM divan_api_login_attempts WHERE attempted_at < ?', [$since]);
         $rows = $this->query('SELECT COUNT(*) AS total FROM divan_api_login_attempts WHERE ip_hash = ? AND attempted_at >= ?', [$ip, $since]);
 
@@ -35,17 +81,20 @@ class DivanRepository
 
     public function failLogin($ip, $now)
     {
+        $this->ensureAuthTables();
         $this->query('INSERT INTO divan_api_login_attempts (ip_hash, attempted_at) VALUES (?, ?)', [$ip, $now]);
     }
 
     public function issueToken($hash, $username, $passwordDigest, $now, $expires)
     {
+        $this->ensureAuthTables();
         $this->query('DELETE FROM divan_api_tokens WHERE expires_at <= ?', [$now]);
         $this->query('INSERT INTO divan_api_tokens (token_hash, username, password_digest, created_at, expires_at) VALUES (?, ?, ?, ?, ?)', [$hash, $username, $passwordDigest, $now, $expires]);
     }
 
     public function token($hash)
     {
+        $this->ensureAuthTables();
         $rows = $this->query('SELECT username, password_digest, expires_at FROM divan_api_tokens WHERE token_hash = ?', [$hash]);
 
         return count($rows) === 1 ? $rows[0] : null;
@@ -134,6 +183,7 @@ class DivanRepository
 
     public function pages()
     {
+        $this->ensurePagesTable();
         $rows = $this->query("SELECT slug, title, html_body, revision, updated_at FROM divan_pages ORDER BY FIELD(slug, 'first-talk', 'last-talk', 'contact')");
 
         return array_map(function ($row) {
@@ -146,6 +196,7 @@ class DivanRepository
 
     public function updatePage($slug, $title, $body, $revision, $now)
     {
+        $this->ensurePagesTable();
         $result = $this->query('UPDATE divan_pages SET title = ?, html_body = ?, revision = revision + 1, updated_at = ? WHERE slug = ? AND revision = ?', [$title, $body, $now, $slug, $revision]);
 
         return (int) $result['affected'];
