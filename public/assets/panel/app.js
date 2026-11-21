@@ -446,7 +446,17 @@ async function mountEditor(form, body, label = 'متن مطلب') {
           'outdent','indent','blockQuote','alignment','|','fontColor','fontBackgroundColor'], shouldNotGroupWhenFull: true},
         heading: {options: [{model: 'paragraph',title: 'متن معمولی',class: 'ck-heading_paragraph'},
           ...[1,2,3].map(n => ({model: `heading${n}`,view: `h${n}`,title: `عنوان ${digits(n)}`,class: `ck-heading_heading${n}`}))]},
-        fontFamily: {options: ['default','Vazirmatn','Tahoma, sans-serif','Arial, Helvetica, sans-serif','Times New Roman, Times, serif'],supportAllValues: true},
+        fontFamily: {
+          options: [
+            'default',
+            { title: 'Vazirmatn', model: 'Vazirmatn' },
+            { title: 'IranNastaliq', model: 'IranNastaliq' },
+            { title: 'B Nazanin', model: 'B Nazanin' },
+            { title: 'B Yekan', model: 'B Yekan' },
+            { title: 'B Roya', model: 'B Roya' },
+          ],
+          supportAllValues: true
+        },
         fontSize: {options: [12,14,16,18,20,24,28,36],supportAllValues: true},
         table: {contentToolbar: ['tableColumn','tableRow','mergeTableCells','tableProperties','tableCellProperties']},
         image: {toolbar: ['imageTextAlternative','toggleImageCaption','imageStyle:inline','imageStyle:block','imageStyle:side','resizeImage']},
